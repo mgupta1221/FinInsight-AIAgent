@@ -1,0 +1,86 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finsight"
+version = "0.1.0"
+description = "Multi-Agent Financial Report Q&A Copilot over Indian annual reports (Track B, ≤8B)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+# Core runtime. Installs on Python 3.11-3.14. Runs Week 1 end-to-end with PyMuPDF parsing and the
+# built-in fallback embedding. Install the "quality" and "pdf" extras (on Python 3.11) for real bge
+# embeddings, Docling, and OCR.
+dependencies = [
+    # --- LLM client + structured output ---
+    "openai>=1.40",              # OpenAI-compatible client for the provided Qwen3-8B endpoint
+    "httpx>=0.27",               # HTTP client (CA-cert verification)
+    "instructor>=1.4",           # structured output + retries on top of the client
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",    # BaseSettings for config.py
+    "tenacity>=8.3",             # retry/backoff helpers
+    "pyyaml>=6.0",               # read config/*.yaml
+
+    # --- Agent orchestration + memory ---
+    "langgraph>=0.2",
+    "langgraph-checkpoint-sqlite>=1.0",
+
+    # --- Retrieval: vector store + keyword search ---
+    "qdrant-client>=1.9",
+    "rank-bm25>=0.2.2",
+
+    # --- PDF parsing (baseline) ---
+    "pymupdf>=1.24",             # text layer + rasterise (pure-wheel, works on 3.14)
+
+    # --- Data ---
+    "pandas>=2.2",
+    "pyarrow>=16.0",             # parquet figure store
+
+    # --- UI + tracing ---
+    "streamlit>=1.36",
+    "langfuse>=2.40",
+]
+
+[project.optional-dependencies]
+# Real bge embeddings + cross-encoder reranker (pulls in torch). Best on Python 3.11.
+quality = [
+    "sentence-transformers>=3.0",
+    "FlagEmbedding>=1.2",
+]
+# Higher-quality PDF parsing: Docling (layout+tables+OCR), Camelot (ruled tables), OCR engine.
+# These lag on new Python versions — install on Python 3.11.
+pdf = [
+    "docling>=2.0",
+    "pdfplumber>=0.11",
+    "camelot-py>=0.11",
+    "pdf2image>=1.17",
+    "rapidocr-onnxruntime>=1.2",
+]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.5",
+]
+# Everything in one go (recommended on Python 3.11, where the whole stack has wheels).
+all = [
+    "sentence-transformers>=3.0",
+    "FlagEmbedding>=1.2",
+    "docling>=2.0",
+    "pdfplumber>=0.11",
+    "camelot-py>=0.11",
+    "pdf2image>=1.17",
+    "rapidocr-onnxruntime>=1.2",
+    "pytest>=8.2",
+    "ruff>=0.5",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

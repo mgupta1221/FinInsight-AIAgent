@@ -1,0 +1,29 @@
+# Secrets & certs
+.env
+*.crt
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Data & build outputs (large / regenerated)
+data/manual-collection/*.pdf
+data/parsed/
+store/qdrant/
+store/*.sqlite
+store/*.parquet
+results/runs/
+trace.jsonl
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Logs
+*.log

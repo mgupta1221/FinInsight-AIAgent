@@ -1,0 +1,106 @@
+# Master company list used by get_company_profile.
+# fiscal years in corpus: FY2024-25 and FY2025-26. FY ends 31 March for all.
+# reporting_units: the unit figures are stated in ("crore" unless noted).
+# pdf_prefix: how the report files are named in data/manual-collection/ (e.g. "Infosys-Annual-Report-2024-25.pdf").
+
+defaults:
+  fy_end: "03-31"
+  reporting_units: crore
+  fiscal_years: ["2024-25", "2025-26"]
+
+companies:
+  # ---- IT services (Ind AS Schedule III, Div II) ----
+  - name: Tata Consultancy Services
+    ticker: TCS
+    sector: it_services
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: TCS
+  - name: Infosys
+    ticker: INFY
+    sector: it_services
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: Infosys
+  - name: HCLTech
+    ticker: HCLTECH
+    sector: it_services
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: HCL
+  - name: Wipro
+    ticker: WIPRO
+    sector: it_services
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: Wipro
+  - name: Tech Mahindra
+    ticker: TECHM
+    sector: it_services
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: TechMahindra
+
+  # ---- FMCG (Ind AS Schedule III, Div II) ----
+  - name: Hindustan Unilever
+    ticker: HINDUNILVR
+    sector: fmcg
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: HUL
+  - name: ITC
+    ticker: ITC
+    sector: fmcg
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: ITC
+  - name: Nestlé India
+    ticker: NESTLEIND
+    sector: fmcg
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: Nestle
+  - name: Britannia Industries
+    ticker: BRITANNIA
+    sector: fmcg
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: Britannia
+  - name: Dabur India
+    ticker: DABUR
+    sector: fmcg
+    is_bank: false
+    is_nbfc: false
+    pdf_prefix: Dabur
+
+  # ---- Banks (Banking Regulation Act 3rd Schedule + RBI) ----
+  - name: HDFC Bank
+    ticker: HDFCBANK
+    sector: bank
+    is_bank: true
+    is_nbfc: false
+    pdf_prefix: HDFC
+  - name: ICICI Bank
+    ticker: ICICIBANK
+    sector: bank
+    is_bank: true
+    is_nbfc: false
+    pdf_prefix: ICICI
+  - name: State Bank of India
+    ticker: SBIN
+    sector: bank
+    is_bank: true
+    is_nbfc: false
+    pdf_prefix: SBI
+  - name: Axis Bank
+    ticker: AXISBANK
+    sector: bank
+    is_bank: true
+    is_nbfc: false
+    pdf_prefix: AxisBank
+  - name: Kotak Mahindra Bank
+    ticker: KOTAKBANK
+    sector: bank
+    is_bank: true
+    is_nbfc: false
+    pdf_prefix: KotakBank

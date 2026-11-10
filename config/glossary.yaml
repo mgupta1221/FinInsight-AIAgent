@@ -1,0 +1,79 @@
+# Metric glossary — the ONLY formulas the calculate tool may use.
+# Each metric lists: the inputs it needs (line items from the statement store), the formula,
+# the output unit, and which company types it applies to. Formulas are evaluated by a safe
+# expression evaluator over the named inputs. Keep this in sync with docs/SPEC.md.
+
+# ---- Non-bank metrics (IT services, FMCG) ----
+non_bank:
+  operating_margin:
+    inputs: [ebit, revenue_from_operations]
+    formula: "ebit / revenue_from_operations * 100"
+    unit: percent
+    note: "EBIT basis, excluding other income. Default operating-margin definition (see SPEC)."
+  ebitda_margin:
+    inputs: [ebitda, revenue_from_operations]
+    formula: "ebitda / revenue_from_operations * 100"
+    unit: percent
+  net_profit_margin:
+    inputs: [net_profit, revenue_from_operations]
+    formula: "net_profit / revenue_from_operations * 100"
+    unit: percent
+  yoy_change:
+    inputs: [current, previous]
+    formula: "(current - previous) / previous * 100"
+    unit: percent
+    note: "Also report absolute change = current - previous."
+  debt_to_equity:
+    inputs: [total_debt, total_equity]
+    formula: "total_debt / total_equity"
+    unit: ratio
+    note: "Non-financial companies only; not meaningful for banks (-> clarify)."
+  current_ratio:
+    inputs: [current_assets, current_liabilities]
+    formula: "current_assets / current_liabilities"
+    unit: ratio
+  return_on_equity:
+    inputs: [net_profit, total_equity]
+    formula: "net_profit / total_equity * 100"
+    unit: percent
+  return_on_capital_employed:
+    inputs: [ebit, capital_employed]
+    formula: "ebit / capital_employed * 100"
+    unit: percent
+  earnings_per_share:
+    inputs: [net_profit_attributable, weighted_avg_shares]
+    formula: "net_profit_attributable / weighted_avg_shares"
+    unit: currency_per_share
+    note: "Prefer the reported basic EPS; compute only if not reported."
+
+# ---- Bank metrics (Banking Regulation Act 3rd Schedule + RBI) ----
+bank:
+  gross_npa_ratio:
+    inputs: [gross_npa, gross_advances]
+    formula: "gross_npa / gross_advances * 100"
+    unit: percent
+  net_npa_ratio:
+    inputs: [net_npa, net_advances]
+    formula: "net_npa / net_advances * 100"
+    unit: percent
+  net_interest_margin:
+    inputs: [net_interest_income, average_interest_earning_assets]
+    formula: "net_interest_income / average_interest_earning_assets * 100"
+    unit: percent
+  casa_ratio:
+    inputs: [casa_deposits, total_deposits]
+    formula: "casa_deposits / total_deposits * 100"
+    unit: percent
+  cost_to_income:
+    inputs: [operating_expenses, net_total_income]
+    formula: "operating_expenses / net_total_income * 100"
+    unit: percent
+  return_on_assets:
+    inputs: [net_profit, average_total_assets]
+    formula: "net_profit / average_total_assets * 100"
+    unit: percent
+  crar:
+    inputs: [total_capital, risk_weighted_assets]
+    formula: "total_capital / risk_weighted_assets * 100"
+    unit: percent
+    note: "Capital adequacy (Basel III). Prefer the reported CRAR; compute only if not reported."

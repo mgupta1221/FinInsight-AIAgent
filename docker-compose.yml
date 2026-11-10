@@ -1,0 +1,42 @@
+# Starts the three services together: the chat app, Qdrant (search), Langfuse (tracing).
+services:
+  app:
+    build: .
+    ports:
+      - "8501:8501"
+    env_file: .env
+    depends_on:
+      - qdrant
+    volumes:
+      - ./store:/app/store
+      - ./data:/app/data
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - ./store/qdrant:/qdrant/storage
+
+  # Langfuse needs a Postgres backend. Minimal self-hosted setup for local tracing.
+  langfuse:
+    image: langfuse/langfuse:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@langfuse-db:5432/postgres
+      - NEXTAUTH_SECRET=local-dev-secret
+      - NEXTAUTH_URL=http://localhost:3000
+      - SALT=local-dev-salt
+    depends_on:
+      - langfuse-db
+
+  langfuse-db:
+    image: postgres:16
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - langfuse-db-data:/var/lib/postgresql/data
+
+volumes:
+  langfuse-db-data:

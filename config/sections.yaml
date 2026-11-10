@@ -1,0 +1,43 @@
+# Which report sections to ingest, and the heading patterns used to find them.
+# One ingested section = one "document" for retrieval. Everything else in the PDF is skipped
+# to keep the index focused (financial statements, notes, MD&A, risk, key ratios, + bank Basel III).
+
+ingest_sections:
+  - key: pnl
+    title: Statement of Profit and Loss
+    patterns: ["statement of profit and loss", "profit and loss account", "profit & loss"]
+    is_primary_statement: true
+  - key: balance_sheet
+    title: Balance Sheet
+    patterns: ["balance sheet"]
+    is_primary_statement: true
+  - key: cash_flow
+    title: Cash Flow Statement
+    patterns: ["cash flow statement", "statement of cash flows"]
+    is_primary_statement: true
+  - key: notes
+    title: Notes to the Financial Statements
+    patterns: ["notes to the financial statements", "notes to the accounts", "notes forming part"]
+    is_primary_statement: false
+  - key: mdna
+    title: Management Discussion and Analysis
+    patterns: ["management discussion and analysis", "management discussion & analysis", "md&a"]
+    is_primary_statement: false
+  - key: risk
+    title: Risk Management
+    patterns: ["risk management", "principal risks", "risk factors"]
+    is_primary_statement: false
+  - key: highlights
+    title: Financial Highlights / Key Ratios
+    patterns: ["financial highlights", "key ratios", "ten year", "performance highlights"]
+    is_primary_statement: false
+  # ---- banks only ----
+  - key: basel
+    title: Basel III / Pillar 3 Disclosures
+    patterns: ["basel iii", "pillar 3", "pillar iii"]
+    is_primary_statement: false
+    banks_only: true
+
+# Scopes to capture separately (figures differ).
+scopes: [consolidated, standalone]
+default_scope: consolidated
