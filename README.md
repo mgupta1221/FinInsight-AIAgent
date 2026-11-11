@@ -11,6 +11,36 @@ single reference this project is built from.
 
 ---
 
+## Quick start (Docker)
+
+> Prerequisites: **Docker** and **Docker Compose**.
+
+1. **Clone & configure:**
+   ```bash
+   cp .env.example .env        # edit .env → set OPENAI_API_KEY
+   ```
+2. **Place required files** in the project root:
+   - `vm04-ca.crt` (CA certificate)
+   - PDFs in `data/manual-collection/`
+3. **Start all services** (app + Qdrant + Langfuse):
+   ```bash
+   docker compose --env-file .env up --build --wait
+   ```
+4. **Run ingestion** (one-off):
+   ```bash
+   docker compose exec app python -m ingest.run_ingest          # all companies
+   docker compose exec app python -m ingest.run_ingest --only INFY  # single company
+   ```
+5. **Open the chat UI:** [http://localhost:8501](http://localhost:8501)
+6. **Stop:**
+   ```bash
+   docker compose --env-file .env down
+   ```
+
+> Langfuse tracing UI is at [http://localhost:3000](http://localhost:3000). Qdrant dashboard at [http://localhost:6333/dashboard](http://localhost:6333/dashboard).
+
+---
+
 ## Quick start (Windows)
 
 > Prerequisites: **Python 3.11** (step 1 below) and, on Windows, PowerShell. Docker is optional.
@@ -102,7 +132,22 @@ python -m pip install -e ".[all]"
 > Run ingestion from the project root using `python -m ingest.run_ingest`, not
 > `python ingest\run_ingest.py`, so Python can resolve the `ingest` package.
 
-Common commands are wrapped in the `Makefile`: `make ingest`, `make app`, `make eval`, `make test`.
+## Makefile shortcuts
+
+| Command | What it does |
+|---|---|
+| `make setup` | First-time setup: start services → install deps → run ingestion |
+| `make dev` | Daily start: start services → launch the app |
+| `make install` | Install the package (editable) + dev deps |
+| `make check` | Verify the LLM endpoint + capabilities (Day-0 check) |
+| `make services` | Start Qdrant + Langfuse in the background |
+| `make ingest` | Run the one-off PDF ingestion pipeline |
+| `make validate` | Check that ingestion produced all expected artifacts |
+| `make app` | Launch the Streamlit chat UI |
+| `make eval` | Run evaluation over the frozen 90-question set |
+| `make test` | Run unit tests |
+| `make lint` | Lint the codebase with Ruff |
+| `make down` | Stop all Docker services |
 
 ## What gets built, week by week
 
