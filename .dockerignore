@@ -1,0 +1,16 @@
+.git
+.gitattributes
+.venv
+__pycache__
+*.pyc
+.env
+.env.example
+store/
+data/parsed/
+data/manual-collection/
+results/
+.idea
+*.egg-info
+BUILD_PLAN.md
+AGENTS.md
+docs/

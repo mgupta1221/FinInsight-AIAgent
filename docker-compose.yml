@@ -1,26 +1,47 @@
 # Starts the three services together: the chat app, Qdrant (search), Langfuse (tracing).
+#
+# Usage:
+#   1. Copy .env.example to .env and fill in OPENAI_API_KEY.
+#   2. Place vm04-ca.crt in the project root.
+#   3. Place the 30 annual-report PDFs in data/manual-collection/.
+#   4. docker compose --env-file .env up --build --wait
+#   5. Open http://localhost:8501 for the chat UI.
+#
+# To run ingestion inside Docker:
+#   docker compose exec app python -m ingest.run_ingest
+
 services:
   app:
     build: .
     ports:
       - "8501:8501"
     env_file: .env
+    environment:
+      # Override localhost URLs — inside Docker, services use their service names.
+      - QDRANT_URL=http://qdrant:6333
+      - LANGFUSE_HOST=http://langfuse:3000
+      # Cert is at /app/vm04-ca.crt (copied by Dockerfile).
+      - OPENAI_CA_CERT=/app/vm04-ca.crt
     depends_on:
-      - qdrant
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
     volumes:
       - ./store:/app/store
       - ./data:/app/data
+      - ./vm04-ca.crt:/app/vm04-ca.crt:ro
 
   qdrant:
     image: qdrant/qdrant:latest
     ports:
       - "6333:6333"
+    restart: unless-stopped
     volumes:
-      - ./store/qdrant:/qdrant/storage
+      - qdrant-data:/qdrant/storage
 
   # Langfuse needs a Postgres backend. Minimal self-hosted setup for local tracing.
   langfuse:
-    image: langfuse/langfuse:latest
+    image: langfuse/langfuse:2
     ports:
       - "3000:3000"
     environment:
@@ -29,14 +50,18 @@ services:
       - NEXTAUTH_URL=http://localhost:3000
       - SALT=local-dev-salt
     depends_on:
-      - langfuse-db
+      langfuse-db:
+        condition: service_started
+    restart: unless-stopped
 
   langfuse-db:
     image: postgres:16
     environment:
       - POSTGRES_PASSWORD=postgres
+    restart: unless-stopped
     volumes:
       - langfuse-db-data:/var/lib/postgresql/data
 
 volumes:
+  qdrant-data:
   langfuse-db-data:

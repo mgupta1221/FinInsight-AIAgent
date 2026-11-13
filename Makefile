@@ -1,5 +1,16 @@
 # Convenience shortcuts. Usage: make <target>
-.PHONY: install check services ingest app eval test lint
+.PHONY: install check services ingest validate app eval test lint dev down setup
+
+# ---------------------------------------------------------------------------
+# First-time setup (run once):  make setup
+# Daily dev start:              make dev
+# ---------------------------------------------------------------------------
+setup: services install ingest  ## First-time: services → install → ingest
+
+dev: services app               ## Daily: start services → launch app
+
+down:               ## Stop all Docker services
+	docker compose --env-file .env down
 
 install:            ## Install the package (editable) + dev deps
 	pip install -e ".[dev]"
@@ -8,7 +19,7 @@ check:              ## Day-0: verify the LLM endpoint + capabilities
 	python scripts/endpoint_check.py
 
 services:           ## Start Qdrant + Langfuse in the background
-	docker compose up -d qdrant langfuse
+	docker compose --env-file .env up -d qdrant langfuse --wait
 
 ingest:             ## Run the one-off PDF ingestion pipeline
 	python -m ingest.run_ingest
