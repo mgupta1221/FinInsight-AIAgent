@@ -30,6 +30,19 @@ class QdrantStore:
             self.client = QdrantClient(url=settings.qdrant_url)
         else:
             self.client = QdrantClient(path=settings.qdrant_url)
+        # NEW (15 Nov 2026): close the client when Python exits.
+        # WHY: with a local folder store (QDRANT_URL=./store/qdrant) the client was closed only by Python's
+        #      final clean-up, which printed "Exception ignored ... ImportError: sys.meta_path is None,
+        #      Python is likely shutting down" after every answer. The answer was not affected, but the
+        #      message looks like a failure. Closing it a moment earlier (atexit) avoids the message.
+        import atexit
+        atexit.register(self._close_quietly)
+
+    def _close_quietly(self) -> None:
+        try:
+            self.client.close()
+        except Exception:  # noqa: BLE001  (already closed, or the interpreter is half shut down)
+            pass
 
     def ensure_collection(self, dim: int) -> None:
         if not self.client.collection_exists(self.collection):

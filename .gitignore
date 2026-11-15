@@ -17,6 +17,7 @@ data/parsed/
 store/qdrant/
 store/*.sqlite
 store/*.parquet
+store/*.csv
 results/runs/
 trace.jsonl
 

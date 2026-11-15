@@ -12,7 +12,18 @@ from finsight.retrieval.bm25 import bm25_search
 from finsight.retrieval.dense import dense_search
 from finsight.retrieval.filters import build_filter
 from finsight.retrieval.hybrid import rrf_fuse
-from finsight.retrieval.qdrant_store import QdrantStore
+# OLD (kept):
+# from finsight.retrieval.qdrant_store import QdrantStore
+# NEW (14 Nov 2026): import Qdrant only if it can be loaded.
+# WHY: qdrant-client needs the `grpc` package. On laptops with Windows Application Control the grpc DLL is
+#      blocked ("DLL load failed while importing cygrpc"), so this import failed and with it the whole
+#      agent, including questions that never use search. Now a failed import only switches dense search
+#      off; keyword search (BM25) and every other tool keep working.
+try:
+    from finsight.retrieval.qdrant_store import QdrantStore
+except Exception as _qdrant_error:  # noqa: BLE001  (ImportError: DLL blocked, or qdrant-client not installed)
+    QdrantStore = None  # type: ignore[assignment,misc]
+    _QDRANT_ERROR = str(_qdrant_error)[:120]
 from finsight.retrieval.reranker import rerank
 from finsight.tools.base import register
 
@@ -21,6 +32,8 @@ _store: QdrantStore | None = None
 
 def _get_store() -> QdrantStore:
     global _store
+    if QdrantStore is None:  # NEW (14 Nov 2026): see the import note at the top; caught in search_report()
+        raise RuntimeError(f"qdrant-client could not be loaded: {_QDRANT_ERROR}")
     if _store is None:
         _store = QdrantStore()
     return _store
@@ -47,7 +60,19 @@ def search_report(
     ticker = get_company_profile(company)["ticker"] if company else None
     flt = build_filter(company=ticker, fiscal_year=fiscal_year, statement=statement, scope=scope)
 
-    dense_hits = dense_search(_get_store(), query, top_k=pool, flt=flt)
+    # CHANGED (agent layer, 13 Nov 2026) -------------------------------------------------------------
+    # OLD: dense_hits = dense_search(_get_store(), query, top_k=pool, flt=flt)
+    # WHY: if Qdrant is not running, or the collection has not been built yet, the line above raised a
+    #      connection error and the whole tool failed, although keyword search (BM25 over
+    #      data/parsed/chunks.jsonl) could still answer. The agent calls this tool for reported ratios and
+    #      summaries, so it must degrade instead of crashing. Dense search is still used whenever it works.
+    try:
+        dense_hits = dense_search(_get_store(), query, top_k=pool, flt=flt)
+    except Exception as e:  # noqa: BLE001  (connection refused, missing collection, embedding model missing)
+        import logging
+        logging.getLogger(__name__).warning("dense search unavailable (%s); using keyword search only", str(e)[:120])
+        dense_hits = []
+    # ---------------------------------------------------------------------------------------------------
     bm25_hits = bm25_search(query, top_k=pool, flt=flt)
     fused = rrf_fuse([dense_hits, bm25_hits], key="id")
     reranked = rerank(query, fused, top_k=top_k)

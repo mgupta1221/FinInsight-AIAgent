@@ -33,7 +33,10 @@ from ingest.embed_index import index_chunks, write_chunk_corpus
 from ingest.parse import parse_pdf
 from ingest.quality_gate import check_report
 from ingest.sections import assign_sections, keep_keys
-from ingest.tables import extract_statement_lines
+from ingest.tables import extract_statement_lines  # noqa: F401  (kept; no longer called, see below)
+# ADDED (agent layer, 13 Nov 2026): position-based statement extractor. See the header of
+# ingest/statements.py for why ingest/tables.py could not be used (it stored no headline figures).
+from ingest.statements import extract_statement_rows
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("ingest")
@@ -58,8 +61,12 @@ def _companies():
     return out
 
 
+# CHANGED (agent layer, 13 Nov 2026): added the keyword argument `figures_only` (default False, so
+# existing callers behave as before).
+# OLD: def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | None,
+#              skip_quality_gate: bool = False) -> None:
 def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | None,
-        skip_quality_gate: bool = False) -> None:
+        skip_quality_gate: bool = False, figures_only: bool = False) -> None:
     all_rows: list[dict] = []
     all_chunks: list[dict] = []
     keep = keep_keys()
@@ -96,18 +103,45 @@ def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | 
                 "unit": prof.get("reporting_units", "crore"),
                 "pdf": pdf.name,
             }
-            all_rows.extend(extract_statement_lines(pages, meta))
+            # CHANGED (agent layer, 13 Nov 2026) ---------------------------------------------------------
+            # OLD: all_rows.extend(extract_statement_lines(pages, meta))
+            # WHY: extract_statement_lines (ingest/tables.py) matched "label number number" on one text
+            #      line. PyMuPDF puts each table cell on its own line, so no real statement row matched and
+            #      the figure store held only date fragments ("march = 31"). It also labelled every row
+            #      consolidated and crore. The new extractor reads the PDF by word position, takes the
+            #      scope from the page title and the unit from the page, and keeps the prior-year column.
+            rows, found = extract_statement_rows(pdf, meta)
+            all_rows.extend(rows)
+            logger.info("  %s FY%s: %d statement rows from %d pages; units %s", prof["ticker"], fy, len(rows),
+                        len(found), sorted({p["unit"] or "not printed" for p in found}))
+            # ADDED: --figures-only builds just the figure store (about 2 minutes for 30 reports) and
+            #        skips chunking + embedding, which are slow. Useful after changing the extractor.
+            if figures_only:
+                continue
+            # ---------------------------------------------------------------------------------------------
             all_chunks.extend(chunk_pages(pages, meta, keep_sections=keep))
 
     # write figure store
     if all_rows:
         settings.store_dir.mkdir(parents=True, exist_ok=True)
         df = pd.DataFrame(all_rows)
-        df.to_parquet(settings.store_dir / "statement_lines.parquet", index=False)
+        # OLD (kept):
+        # df.to_parquet(settings.store_dir / "statement_lines.parquet", index=False)
+        # NEW (14 Nov 2026): always write a CSV copy, and do not stop if parquet cannot be written.
+        # WHY: parquet needs pyarrow, which Windows Application Control blocks on some laptops.
+        # get_financial_item reads the CSV when parquet is not usable.
+        df.to_csv(settings.store_dir / "statement_lines.csv", index=False)
+        try:
+            df.to_parquet(settings.store_dir / "statement_lines.parquet", index=False)
+        except Exception as e:  # noqa: BLE001
+            print(f"parquet not written ({type(e).__name__}); using statement_lines.csv")
         logger.info("wrote %d statement-line rows", len(df))
     else:
         logger.warning("no statement-line rows extracted")
 
+    # ADDED (agent layer): with --figures-only the chunk corpus and the index are left untouched.
+    if figures_only:
+        return
     # write chunk corpus (for BM25) and index (for dense search)
     write_chunk_corpus(all_chunks)
     logger.info("wrote %d chunks", len(all_chunks))
@@ -124,8 +158,12 @@ def main() -> int:
     ap.add_argument("--limit-pages", type=int, help="only first N pages per report (smoke test)")
     ap.add_argument("--no-quality-gate", action="store_true",
                     help="ingest even reports that fail the completeness check")
+    # ADDED (agent layer, 13 Nov 2026)
+    ap.add_argument("--figures-only", action="store_true",
+                    help="build only store/statement_lines.parquet (skip chunking and indexing)")
     args = ap.parse_args()
-    run(args.only, args.docling, not args.no_index, args.limit_pages, args.no_quality_gate)
+    # OLD: run(args.only, args.docling, not args.no_index, args.limit_pages, args.no_quality_gate)
+    run(args.only, args.docling, not args.no_index, args.limit_pages, args.no_quality_gate, args.figures_only)
     return 0
 
 
