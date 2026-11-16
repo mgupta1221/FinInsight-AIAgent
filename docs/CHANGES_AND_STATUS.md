@@ -140,7 +140,7 @@ The figure store is already built in this folder (rebuilt on 15 Nov 2026), so st
 figure store after taking this code: `python -m ingest.run_ingest --figures-only`.
 
 .
-## 15. Update 15 Nov 2026 — advice question answered from memory (bug fix)
+## 7. Update 15 Nov 2026 — advice question answered from memory (bug fix)
 
 Found on the real model. After "What is the net profit of TCS for FY2024-25?", the question
 "What is best price to buy TCS?" was answered with TCS's net profit. It should have been refused.
@@ -155,7 +155,7 @@ Found on the real model. After "What is the net profit of TCS for FY2024-25?", t
 
 Unit tests: 113 passed on Python 3.11 at that point.
 
-## 16. Update 15 Nov 2026 — "and 24-25" treated as a year-on-year question (bug fix)
+## 8. Update 15 Nov 2026 — "and 24-25" treated as a year-on-year question (bug fix)
 
 Found on the real model: after "What was Wipro's operating margin in FY2025-26?", the follow-up "and 24-25"
 was answered with "Year-on-year change of which figure?".
@@ -167,7 +167,7 @@ was answered with "Year-on-year change of which figure?".
 
 Unit tests: 114 passed on Python 3.11.
 
-## 17. Update 15 Nov 2026 — follow-ups that name no figure keep the remembered one (bug fix)
+## 9. Update 15 Nov 2026 — follow-ups that name no figure keep the remembered one (bug fix)
 
 Found on the real model after section 16: "and 24-25" now answered "'None' is not a statement line". The model
 had sent intent "yoy" **and** metric "yoy_change"; section 16 corrected the intent but the metric stayed and
