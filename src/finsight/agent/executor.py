@@ -38,6 +38,15 @@ TOOLS = {"get_financial_item": get_financial_item, "normalise_units": normalise,
          "compare_rank": compare_rank, "evaluate_expression": evaluate_expression}
 
 
+# Topic of a summary -> the words such a section of an annual report really uses (17 Nov 2026; see summarise()).
+SUMMARY_TOPICS = [
+    (r"risk", "principal risks risk management mitigation risks and opportunities"),
+    (r"strateg|outlook|priorit|future|plan", "strategy strategic priorities outlook growth opportunities way forward"),
+    (r"commentary|management discussion|md&a|mdna", "management discussion and analysis review of performance operating environment"),
+    (r"performance|results|business|financial review|growth", "revenue growth turnover profit margin volume growth segment performance financial highlights year in review"),
+]
+
+
 class Escalate(Exception):
     """The agent cannot complete the task reliably; hand back to the user with the reason."""
 
@@ -204,12 +213,32 @@ class Run:
             self.values[company] = {"metric": None, "value": round(v, 2), "unit": unit, "formula": None}
 
     def summarise(self, company: str, fiscal_year: str, topic: str) -> None:
-        passages = []
-        for p in self.search(topic, company, fiscal_year, top_k=3):
+        # CHANGED (17 Nov 2026). OLD:
+        #     passages = []
+        #     for p in self.search(topic, company, fiscal_year, top_k=3):
+        #         ...
+        # WHY: the topic "Business Performance" was searched with exactly those two words, and the search matches
+        #      words. It returned pages on employee PERFORMANCE management and PERFORMANCE share plans, so the
+        #      summary was about HR, not about how the business did. Two changes:
+        #      1. the topic is widened with the words such a section really uses (SUMMARY_TOPICS below), which on
+        #         the same report brings up the CEO's statement, the letter to shareholders and the MD&A;
+        #      2. at most one passage per page, up to 4 pages, so one page cannot fill the whole summary.
+        query = topic
+        for pattern, extra in SUMMARY_TOPICS:
+            if re.search(pattern, topic.lower()):
+                query = f"{topic} {extra}"
+                break
+        passages, pages = [], set()
+        for p in self.search(query, company, fiscal_year, top_k=10):
+            if p["page"] in pages:
+                continue
+            pages.add(p["page"])
             text, n = sanitise(p["text"])
             if n:
                 self.trace.append({"note": f"sanitiser removed {n} instruction-like sentence(s) from {p['citation']}"})
-            passages.append({"citation": p["citation"], "page": p["page"], "text": text[:1800]})
+            passages.append({"citation": p["citation"], "page": p["page"], "text": text[:1500]})
+            if len(passages) == 4:
+                break
         self.result["passages"] = passages
 
     def execute(self, steps: list[AgentStep]) -> dict:

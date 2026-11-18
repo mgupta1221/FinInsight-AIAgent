@@ -53,3 +53,9 @@ def test_chat_screen_uses_the_agent(figure_store, monkeypatch):
     assert seen[-1].endswith("for INFY") and not at.exception
     at.chat_input[0].set_value("Should I buy TCS shares?").run()
     assert at.warning and "investment advice" in at.warning[0].value
+    # added 17 Nov 2026: touching a sidebar filter redraws the page; earlier answers must keep their full cards
+    tables, expanders = len(at.table), len(at.expander)
+    assert tables == 2 and expanders == 3                                        # two answers with figures, three traces
+    at.selectbox[1].set_value("2024-25").run()
+    assert not at.exception and (len(at.table), len(at.expander)) == (tables, expanders)
+    assert at.warning and "investment advice" in at.warning[0].value            # the refusal is still shown as a refusal

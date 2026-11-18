@@ -39,6 +39,24 @@ class Memory:
                         "updated = CURRENT_TIMESTAMP", (session_id, json.dumps(slots)))
         self.db.commit()
 
+    # NEW (17 Nov 2026): the question the agent could not finish because it had to ask something back.
+    # WHY: slots were saved only after a successful answer. After a clarifying question ("Which part would you
+    #      like?") nothing was kept, so the user's reply ("key risks") arrived as a brand-new question with no
+    #      company, and the agent asked again, turn after turn. The unfinished question is now kept for exactly
+    #      one turn under the key "_pending", beside the normal slots.
+    def set_pending(self, session_id: str, question: str) -> None:
+        slots = self.get(session_id)
+        slots["_pending"] = question
+        self.save(session_id, slots)
+
+    def pop_pending(self, session_id: str) -> str | None:
+        """Return the unfinished question, if any, and forget it (it is good for one reply only)."""
+        slots = self.get(session_id)
+        pending = slots.pop("_pending", None)
+        if pending is not None:
+            self.save(session_id, slots)
+        return pending
+
     def log_turn(self, session_id: str, question: str, status: str, answer: str) -> None:
         self.db.execute("INSERT INTO turns (id, question, status, answer) VALUES (?, ?, ?, ?)", (session_id, question, status, answer))
         self.db.commit()

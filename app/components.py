@@ -42,7 +42,13 @@ def render_agent_answer(st, a) -> None:
     """Draw one AgentAnswer: status, text, formula, input figures, caveats and the step-by-step trace."""
     if a.status == "answered":
         st.markdown(answer_markdown(a))
-        st.caption(("Checked: every number traces to a cited page." if a.verified else "Not verified.")
+        # CHANGED (17 Nov 2026).  OLD: st.caption(("Checked: every number traces to a cited page." if a.verified else "Not verified.")
+        # WHY: under a text summary that line overstated the check. For a summary the critic confirms only that
+        #      each point cites a page that was actually retrieved; it cannot judge whether the points are the
+        #      important ones.
+        checked = ("Checked: each point cites a page that was retrieved. Read the pages to confirm the wording."
+                   if a.key_points else "Checked: every number traces to a cited page.")
+        st.caption((checked if a.verified else "Not verified.")
                    + f"  ·  {a.tokens_used:,} tokens")
     elif a.status == "clarify":
         st.info(answer_markdown(a))

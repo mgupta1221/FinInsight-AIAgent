@@ -118,7 +118,7 @@ python scripts/endpoint_check.py
 python -m pytest -q
 ```
 
-Expected: **114 passed**.
+Expected: **128 passed**.
 
 ## 8\. Build the figure store (needed for number questions)
 

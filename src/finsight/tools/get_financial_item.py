@@ -85,14 +85,18 @@ def _primary_pages(rows: pd.DataFrame) -> dict[str, set[int]]:
     """Pages of the primary statements of ONE report and scope: {statement_type: {pages}}.
 
     NEW (15 Nov 2026). The balance sheet, the P&L and (often) the cash-flow statement are printed on
-    neighbouring pages. Pages no more than 3 apart are grouped into a block; the block holding the most
+    neighbouring pages. Pages no more than 10 apart are grouped into a block; the block holding the most
     different statements (at least two) is the set of primary statements. A statement type that is not in
     that block (SBI prints its cash flow 80 pages later) is not restricted: every page of it is searched.
     """
     pages = sorted({(int(p), s) for p, s in zip(rows["page"], rows["statement_type"])})
     blocks: list[list[tuple[int, str]]] = []
     for item in pages:
-        if blocks and item[0] - blocks[-1][-1][0] <= 3:
+        # CHANGED (17 Nov 2026): pages up to 10 apart belong to one block.  OLD: <= 3
+        # WHY: banks print the balance sheet, then several pages of schedules, then the P&L (SBI: p200 and
+        #      p209). With a gap of 3 the real balance sheet fell outside the block and a later look-alike
+        #      page was preferred. Stray pages that carry a statement title sit 40+ pages away, so 10 is safe.
+        if blocks and item[0] - blocks[-1][-1][0] <= 10:
             blocks[-1].append(item)
         else:
             blocks.append([item])
@@ -161,8 +165,26 @@ def get_financial_item(
             # CHANGED (15 Nov 2026).  OLD: rx = re.compile("|".join(re.escape(l) + r"(?![a-z])" for l in labels))
             # WHY: "total equity" matched the row "TOTAL EQUITY AND LIABILITIES" (ITC, Wipro), so total assets
             #      was returned as total equity. A label followed by "and ..." / "& ..." is a different row.
-            rx = re.compile("|".join(re.escape(l) + r"(?![a-z])(?!\s+(and|&)\s)" for l in labels))
-            hits = q[cleaned.map(lambda c: bool(rx.match(c)))]
+            # CHANGED again (17 Nov 2026): "of ..." and "before ..." continuations are rejected too.
+            # OLD (15 Nov): rx = re.compile("|".join(re.escape(l) + r"(?![a-z])(?!\s+(and|&)\s)" for l in labels))
+            # WHY: "deposits" matched "Deposits of branches outside India" (a part of the figure, on a schedule
+            #      page), "tax expense" matched "Tax expense of discontinued operations" (ITC), and "net profit
+            #      for the year" matched "... before deducting minority interest" (ICICI). Each is a different
+            #      row from the one asked for. Not finding a figure is safer than returning a neighbour.
+            #      The LONGEST label that starts the row decides: "net profit for the year before ..." is judged
+            #      as "net profit for the year" + " before ...", not as "net profit" + " for the year ...".
+            # (15 Nov version, kept): rx = re.compile("|".join(re.escape(l) + r"(?![a-z])(?!\s+(and|&|of|before)\s)" for l in labels))
+            #                         hits = q[cleaned.map(lambda c: bool(rx.match(c)))]
+            by_length = sorted(labels, key=len, reverse=True)
+
+            def _starts_with_label(c: str) -> bool:
+                label = next((l for l in by_length if c.startswith(l)), None)
+                if label is None:
+                    return False
+                rest = c[len(label):]
+                return not re.match(r"[a-z]", rest) and not re.match(r"\s+(and|&|of|before)\s", rest)
+
+            hits = q[cleaned.map(_starts_with_label)]
         if not hits.empty:
             hits = hits[hits["page"] == hits["page"].min()]          # the statement itself, not later notes
         idx = int(spec.get("occurrence", 0))

@@ -165,3 +165,101 @@ def test_model_cannot_turn_a_year_follow_up_into_year_on_year(figure_store, ask)
     assert plan.metric == "net_profit_margin"                                    # a figure IS named: the new metric is used
     a = ask("How did Infosys' consolidated revenue from operations in FY2025-26 compare with the previous year?", mem=Memory(":memory:"))
     assert a.status == "answered" and a.intent == "yoy" and a.value == pytest.approx(11.1111, abs=0.01)
+
+
+def test_summary_without_a_topic_asks_which_part(fake_search, ask):
+    """Real run, 17 Nov 2026: "summarize annual report for HUL" was answered with dividend dates."""
+    for q in ("can you summarize annual report for HUL in hundred words", "Summarise the ITC FY2025-26 annual report", "Give me a brief summary of ITC"):
+        a = ask(q)
+        assert a.status == "clarify" and "Which part" in a.clarifying_question, q
+    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in ("Cyber risk", "Commodity risk", "Regulatory risk")]}
+    assert ask("Summarise the top risks ITC lists in its FY2025-26 report.", model(summary=good)).status == "answered"
+
+
+# ---- added 17 Nov 2026: replies to a clarifying question ----
+def test_reply_to_a_clarifying_question_completes_it(figure_store, fake_search, ask):
+    """Real run: 'summarize annual report for HUL' -> 'key risks' -> 'HUL' -> 'net profit' asked for the company
+    every time, because nothing was kept after a clarifying question."""
+    mem = Memory(":memory:")
+    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in ("Cyber risk", "Commodity risk", "Regulatory risk")]}
+    a = ask("can you summarize annual report for ITC in hundred words", mem=mem)
+    assert a.status == "clarify" and "Which part" in a.clarifying_question
+    a = ask("key risks", mem=mem)                                                 # topic given; company is remembered
+    assert a.status == "clarify" and "fiscal year" in a.clarifying_question
+    a = ask("2025-26", model(summary=good), mem=mem)                              # year given; everything is known now
+    assert a.status == "answered" and a.companies == ["ITC"] and len(a.key_points) == 3
+
+    mem = Memory(":memory:")
+    assert "Which company" in ask("What was the consolidated revenue from operations?", mem=mem).clarifying_question
+    assert "fiscal year" in ask("Infosys", mem=mem).clarifying_question
+    a = ask("FY2025-26", mem=mem)
+    assert a.status == "answered" and a.value == 1000.0 and any("reply to my clarifying question" in t.get("note", "") for t in a.trace)
+
+
+def test_a_reply_can_replace_the_company_or_choose_an_option(figure_store, ask):
+    mem = Memory(":memory:")
+    assert "banks only" in ask("What was Infosys' CASA ratio in FY2025-26?", mem=mem).clarifying_question
+    a = ask("operating margin", mem=mem)                                          # picks one of the offered options
+    assert a.status == "answered" and a.metric == "operating_margin" and a.companies == ["INFY"]
+    mem = Memory(":memory:")
+    assert "Which margin" in ask("What was Infosys' margin in FY2025-26?", mem=mem).clarifying_question
+    assert ask("net profit margin", mem=mem).metric == "net_profit_margin"
+    from finsight.agent.planner import merge_reply
+    assert "infosys" not in merge_reply("CASA ratio for Infosys in FY2025-26", "HDFC Bank").lower()       # company replaced
+    assert merge_reply("revenue of Wipro in FY2025-26", "2024-25").count("2025-26") == 0                  # year replaced
+
+
+def test_unfinished_question_is_dropped_by_a_new_question_or_after_one_turn(figure_store, ask):
+    mem = Memory(":memory:")
+    ask("can you summarize annual report for ITC in hundred words", mem=mem)      # leaves an unfinished question
+    a = ask("What was Infosys' consolidated net profit in FY2025-26?", mem=mem)   # a full new question
+    assert a.status == "answered" and a.companies == ["INFY"] and a.value == 180.0 and a.intent == "fact"
+    assert mem.pop_pending("t") is None
+    mem = Memory(":memory:")                                                      # nothing remembered from earlier answers
+    ask("can you summarize annual report for ITC in hundred words", mem=mem)
+    assert ask("Should I buy ITC shares?", mem=mem).status == "refused"           # a refusal also clears it
+    a = ask("key risks", mem=mem)                                                 # too late: this is a new, incomplete question
+    assert a.status == "clarify" and "Which company" in a.clarifying_question
+    from finsight.agent.planner import is_reply
+    assert is_reply("key risks") and is_reply("HUL") and is_reply("2024-25") and is_reply("the standalone one")
+    assert not is_reply("What was TCS' net profit in FY2025-26?") and not is_reply("TCS net profit 2025-26")
+
+
+def test_question_without_a_company_uses_the_company_just_discussed(figure_store, ask):
+    mem = Memory(":memory:")
+    assert ask("What was the net profit?", mem=mem).status == "clarify"           # nothing discussed yet: must ask
+    mem = Memory(":memory:")
+    ask(Q_REV, mem=mem)
+    a = ask("What was the net profit?", mem=mem)
+    assert a.status == "answered" and a.companies == ["INFY"] and a.value == 180.0 and a.fiscal_years == ["2025-26"]
+    assert any("taken from the previous question" in c for c in a.caveats)
+    assert not any("previous question" in c for c in ask(Q_REV, mem=mem).caveats)   # everything stated: no note
+    assert ask("What is the dress code?", mem=mem).status == "clarify"            # not understood: not attached to Infosys
+
+
+# ---- added 17 Nov 2026: the model may not invent a year; summary topics are widened before searching ----
+def test_a_year_the_user_never_gave_is_not_accepted_from_the_model(figure_store, ask):
+    guess = model(plan={"intent": "fact", "companies": ["Infosys"], "fiscal_years": ["2025-26"], "item": "net_profit"})
+    a = ask("What was Infosys' consolidated net profit?", guess)
+    assert a.status == "clarify" and "fiscal year" in a.clarifying_question
+    assert ask("What was Infosys' consolidated net profit in the latest year?", guess).fiscal_years == ["2025-26"]
+    assert ask("What was Infosys' consolidated revenue from operations last year?").fiscal_years == ["2024-25"]
+
+
+def test_summary_topic_is_widened_and_pages_are_not_repeated(monkeypatch, ask):
+    import finsight.agent.executor as ex
+    seen = {}
+
+    def search(query, company=None, fiscal_year=None, top_k=5, **_):
+        seen.update(query=query, top_k=top_k)
+        pages = [86, 86, 86, 10, 41, 47, 11]                                      # the same page three times, then others
+        return [{"page": p, "citation": f"HINDUNILVR-FY2526-p{p}", "score": 1.0, "text": f"[hdr]\nText of page {p}."} for p in pages]
+    monkeypatch.setattr(ex, "search_report", search)
+    good = {"answer": "Three points.", "key_points": [{"point": f"Point {p}", "citation": f"HINDUNILVR-FY2526-p{p}"} for p in (86, 10, 41)]}
+    a = ask("Summarise the business performance of HUL in FY2025-26", model(summary=good))
+    assert a.status == "answered"
+    assert "revenue growth" in seen["query"] and "business performance" in seen["query"].lower()
+    used = [t for t in a.trace if t.get("tool") == "search_report"][0]["result"]
+    assert len(used) == 7                                                         # what the search returned ...
+    bad = {"answer": "x", "key_points": [{"point": "p", "citation": "HINDUNILVR-FY2526-p11"}] * 3}
+    assert ask("Summarise the business performance of HUL in FY2025-26", model(summary=bad)).status == "escalated"   # ... p11 was 5th page: not passed on

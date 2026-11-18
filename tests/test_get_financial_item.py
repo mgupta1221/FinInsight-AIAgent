@@ -101,3 +101,31 @@ def test_primary_statement_pages_win_over_an_earlier_look_alike_page(monkeypatch
     r = get_financial_item("HDFC Bank", "deposits", "2025-26")
     assert (r["value"], r["page"]) == (3099638.29, 471)
     assert gfi._primary_pages(_store(rows[:1])) == {}                                                  # one lone page: no restriction
+
+
+# ---- added 17 Nov 2026 ----
+def test_a_longer_label_with_of_or_before_is_a_different_row(monkeypatch):
+    """Real run: HDFC Bank consolidated deposits came back as Rs 24,105 crore, read from the schedule row
+    "Deposits of branches outside India" because the balance-sheet page itself had not been found."""
+    import finsight.tools.get_financial_item as gfi
+    rows = [_row("HDFCBANK", "balance_sheet", "II. Deposits of branches outside India", 24105.32, 447),
+            _row("ITC", "pnl", "XIII Tax expense of discontinued operations", 9.0, 253),
+            _row("ICICIBANK", "pnl", "Net profit for the year before deducting minority interest", 5.0, 138),
+            _row("HINDUNILVR", "pnl", "Profit before tax from continuing operations", 13812.0, 184)]
+    monkeypatch.setattr(gfi, "_load_store", lambda: _store(rows))
+    for company, item in (("HDFC Bank", "deposits"), ("ITC", "tax_expense"), ("ICICI Bank", "net_profit")):
+        with pytest.raises(ToolError):
+            get_financial_item(company, item, "2025-26")
+    assert get_financial_item("HUL", "profit_before_tax", "2025-26")["value"] == 13812.0      # a harmless suffix still matches
+
+
+def test_primary_block_spans_bank_schedules(monkeypatch):
+    """SBI: balance sheet p200, schedules, P&L p209. A look-alike balance-sheet page at p207 must not win."""
+    import finsight.tools.get_financial_item as gfi
+    rows = [_row("SBIN", "balance_sheet", "Deposits", 600.0, 200, "standalone", "thousand"), _row("SBIN", "balance_sheet", "Deposits", 1.0, 207, "standalone", "thousand"),
+            _row("SBIN", "pnl", "Interest earned", 80.0, 209, "standalone", "thousand"), _row("SBIN", "balance_sheet", "Deposits", 2.0, 273, "standalone", "crore")]
+    df = _store(rows)
+    assert gfi._primary_pages(df) == {"balance_sheet": {200, 207}, "pnl": {209}}
+    monkeypatch.setattr(gfi, "_load_store", lambda: df)
+    r = get_financial_item("SBI", "deposits", "2025-26", scope="standalone")
+    assert (r["value"], r["page"]) == (600.0, 200)

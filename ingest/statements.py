@@ -223,6 +223,15 @@ def classify(lines, height: float, context: str | None = None, headings: list[tu
         return None
     if re.search(r"keyperformance|performancereview|ataglance", top_text.replace(" ", "")):
         return None                                     # NEW (15 Nov 2026): letter-spaced "K E Y  P E R F O R M A N C E ..."
+    # NEW (17 Nov 2026): a SCHEDULE page is not the statement, even though its heading names the statement
+    # ("Schedules to the Consolidated Balance Sheet", "Schedule 3 - Deposits").
+    # WHY: schedule pages repeat the statement's row names with sub-totals ("Deposits ... (i) From banks"). When
+    #      the statement page itself was not found, the lookup read a schedule row and returned a part of the
+    #      figure as if it were the whole (see the note in extract_statement_rows). Better no figure than that one.
+    # Only a line that BEGINS with "Schedule ..." counts: "refer Schedule 18" inside a cash-flow row, or the
+    # column header "Schedule No.", must not exclude the statement itself.
+    if any(re.match(r"\W*schedules? (to|forming|annexed|\d)", t) for t in top):
+        return None
     # NEW (15 Nov 2026): a bare title ("Balance Sheet", no standalone/consolidated anywhere near it) is accepted
     # only AFTER an auditor's report has been seen. WHY: performance-review pages in the front of a report
     # (Axis Bank "Key performance indicators") carry a sub-heading "Balance Sheet" above a small table. They
@@ -331,7 +340,15 @@ def extract_statement_rows(pdf: str | Path, meta: dict) -> tuple[list[dict], lis
             if c or s:
                 context = "consolidated" if c > s else "standalone"
         after_statement = bool(pages_found) and pages_found[-1]["page"] == i      # previous PDF page was a statement
-        if not ("balance sheet" in low or "profit" in low or "cash flow" in low or after_statement):
+        # CHANGED (17 Nov 2026): the quick filter also looks at the text with spaces removed.
+        # OLD: if not ("balance sheet" in low or "profit" in low or "cash flow" in low or after_statement):
+        # WHY: HDFC Bank FY2024-25 prints "C O N S O L I D A T E D  B A L A N C E  S H E E T" letter-spaced and the
+        #      page has no other occurrence of these words, so the page was skipped before its title was even
+        #      read. The consolidated balance sheet (p441) was missing, and "deposits" was then read from a
+        #      schedule page (p447): Rs 24,105 crore instead of about Rs 27 lakh crore. A wrong answer.
+        tight = low.replace(" ", "")
+        if not ("balance sheet" in low or "profit" in low or "cash flow" in low or after_statement
+                or "balancesheet" in tight or "profitandloss" in tight or "cashflow" in tight):
             continue                                    # (a continuation page may contain none of these words)
         words = words_of(page)
         width, height = page.rect.width, page.rect.height
@@ -346,7 +363,11 @@ def extract_statement_rows(pdf: str | Path, meta: dict) -> tuple[list[dict], lis
                 # scope hint when the page itself does not say: the statement page just before it (SBI prints
                 # "Profit and Loss Account" right after the standalone balance sheet), else the auditor's report
                 last = pages_found[-1] if pages_found else None
-                hint = last["scope"] if last and i + 1 - last["page"] <= 3 else context
+                # OLD: hint = last["scope"] if last and i + 1 - last["page"] <= 3 else context
+                # CHANGED (17 Nov 2026): if no auditor's report has been seen yet, fall back to the last statement
+                # page however far back. WHY: SBI FY2024-25 prints balance sheet (p168), nine pages of schedules,
+                # then "Profit and Loss Account" (p177) with no scope word, and its auditor's report comes later.
+                hint = last["scope"] if last and i + 1 - last["page"] <= 3 else (context or (last["scope"] if last else None))
                 kind = classify(lines, height, hint)
                 if not kind:
                     heads = headings_of(page, x_lo, x_hi)

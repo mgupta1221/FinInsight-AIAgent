@@ -67,6 +67,9 @@ with st.sidebar:
     top_k = st.slider("Passages to retrieve", 3, 10, 5)
     st.markdown("---")
     st.caption("Leave filters on **(any)** to let the search figure it out.")
+    # NEW (17 Nov 2026): say what the filters do in Agent mode, because changing one does not change old answers.
+    st.caption("In Agent mode a filter is added only to a NEW question that names no company or year. "
+               "Answers already on screen do not change.")
 
 company_f = None if company == "(any)" else company
 fy_f = None if fy == "(any)" else fy
@@ -89,9 +92,21 @@ def with_filters(q: str) -> str:
         q += f" in FY{fy_f}"
     return q
 
+# CHANGED (17 Nov 2026): earlier agent answers are redrawn as full cards, not as plain text.
+# OLD:
+# for turn in st.session_state.history:
+#     with st.chat_message(turn["role"]):
+#         st.markdown(turn["content"])
+# WHY: Streamlit runs this whole script again on every click, including a change of a sidebar filter. The
+#      earlier answers were then redrawn from their saved text only, so the formula, the figures table and
+#      the "How I got this" steps disappeared as soon as a filter was touched. The answer object is now kept
+#      with each turn (key "agent") and drawn the same way every time.
 for turn in st.session_state.history:
     with st.chat_message(turn["role"]):
-        st.markdown(turn["content"])
+        if turn.get("agent") is not None:
+            render_agent_answer(st, turn["agent"])
+        else:
+            st.markdown(turn["content"])
 
 question = st.chat_input("Ask about a company's annual report…")
 if question:
@@ -137,4 +152,6 @@ if question:
                         st.markdown(f"**`{p['citation']}`** — page {p['page']} · {p.get('section','')}")
                         st.caption(p["text"][:600] + ("…" if len(p["text"]) > 600 else ""))
             reply = result["answer"]
-    st.session_state.history.append({"role": "assistant", "content": reply})
+    # OLD: st.session_state.history.append({"role": "assistant", "content": reply})
+    st.session_state.history.append({"role": "assistant", "content": reply,
+                                     "agent": agent_answer if use_agent else None})     # see the note above the history loop

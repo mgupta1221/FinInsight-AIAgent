@@ -105,6 +105,62 @@ YOY_WORDS = re.compile(r"\b(change[ds]?|grow(th|n)?|grew|increase[ds]?|decrease[
                        r"(compared? (with|to)|versus|vs\.?|over) (the )?(last|previous|prior) year)\b")
 
 
+# Words that ask FOR a summary but do not say OF WHAT (17 Nov 2026).
+_NO_TOPIC = set("""a an the of for in on to and or me us please can could would you give write provide make show tell
+    summarize summarise summarized summarised summarizing summarising summary summaries describe description overview
+    brief briefly short shortly quick quickly overall whole entire full complete general annual report reports its their
+    fy year fiscal financial words word lines line points point bullets bullet sentences sentence paragraph paragraphs
+    hundred fifty thousand one two three four five six ten twenty about around within under max maximum upto up
+    what is was does do did say says said company bank it this that top key main list lists listed s""".split())
+
+
+def _summary_topic(question: str, tickers: list[str]) -> list[str]:
+    """The words of a summary request that name a topic: "Summarise the top risks ITC lists" -> ['risks']."""
+    from finsight.tools.company_match import _aliases
+    names: set[str] = set()
+    for t in tickers:
+        for n in _aliases().get(t, []):
+            names |= set(re.findall(r"[a-z]+", n.lower()))
+    return [w for w in re.findall(r"[a-z]+", question.lower()) if len(w) > 1 and w not in _NO_TOPIC and w not in names]
+
+
+_NEW_QUESTION = re.compile(r"^\s*(what|which|how|compare|summari[sz]e|give|show|tell|list|is|are|was|were|do|does|did|can|could)\b", re.I)
+
+
+def is_reply(text: str) -> bool:
+    """True if `text` reads like an answer to a clarifying question ("key risks", "HUL", "2024-25", "net profit
+    margin") and not like a new question of its own.   NEW (17 Nov 2026)
+    """
+    words = re.findall(r"[A-Za-z0-9]+", text)
+    if not words or len(words) > 8:
+        return False
+    if _NEW_QUESTION.match(text) and len(words) > 3:
+        return False
+    q = text.lower()
+    names_figure = any(re.search(rx, q) for _, rx in METRIC_WORDS + ITEM_PHRASES + ITEM_WORDS) or bool(re.search(r"summar", q))
+    return not (find_companies(text) and names_figure and years_in(text))      # company + figure + year = a full question
+
+
+def merge_reply(pending: str, reply: str) -> str:
+    """The unfinished question completed by the user's reply, as one piece of text.   NEW (17 Nov 2026)
+
+    "can you summarize annual report for HUL" + "key risks" -> "can you summarize annual report for HUL. key risks"
+    If the reply names a company or a year, it REPLACES the one in the unfinished question ("CASA ratio for
+    Infosys" + "HDFC Bank" -> "CASA ratio for . HDFC Bank"), so the two are not read as a comparison.
+    """
+    from finsight.corpus import _FY
+    from finsight.tools.company_match import _aliases
+    base = pending
+    if find_companies(reply):
+        for ticker in find_companies(pending):
+            for name in sorted(_aliases().get(ticker, []), key=len, reverse=True):
+                base = re.sub(rf"\b{re.escape(name)}\b('s)?", "", base, flags=re.I)
+    if years_in(reply):
+        base = _FY.sub("", base)
+    base = re.sub(r"\s+", " ", base).strip().rstrip("?.")
+    return f"{base}. {reply.strip()}"
+
+
 class Clarify(Exception):
     """The question cannot be answered until the user says more."""
 
@@ -160,7 +216,14 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
     words = re.findall(r"[a-z]+", q)
     fragment = len(words) <= 4 and not _unknown_words(question, find_companies(question)) \
         and not any(w in _vocabulary() and w not in _FILLER for w in words)
-    follow = bool(memory) and (plan.is_follow_up or bool(FOLLOW_UP.search(question)) or fragment)
+    # NEW (17 Nov 2026): a question that names a figure but NO company, right after an answered question, is
+    # about the same company ("What was the net profit?" after an answer about Wipro). Only when every word is
+    # understood, so an unrelated question is not attached to the old company. The answer says so (graph.py
+    # adds a note), and it always names the company, so the user can see what was assumed.
+    same_company = not find_companies(question) and any(w in _vocabulary() and w not in _FILLER for w in words) \
+        and not _unknown_words(question, [])
+    # OLD (earlier today): follow = bool(memory) and (plan.is_follow_up or bool(FOLLOW_UP.search(question)) or fragment)
+    follow = bool(memory) and (plan.is_follow_up or bool(FOLLOW_UP.search(question)) or fragment or same_company)
 
     # companies: what the code finds in the question, plus resolvable names from the model
     tickers = find_companies(question)
@@ -247,6 +310,14 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
 
     if not tickers:
         raise Clarify("Which company do you mean?")
+    # NEW (17 Nov 2026): a summary needs a topic.
+    # WHY: "can you summarize annual report for HUL in hundred words" was answered with dividend dates and how to
+    #      obtain the report. The agent reads only a handful of passages, found by searching for the words of the
+    #      question; the words "annual report" match administrative pages, not the business. A 300-page report
+    #      cannot be summarised from five passages, so the agent asks which part is wanted.
+    if intent == "summary" and not _summary_topic(question, tickers):
+        raise Clarify("An annual report is too long to summarise as a whole. Which part would you like: "
+                      "business performance, key risks, strategy and outlook, or management commentary?")
     banks = [bool(get_company_profile(t)["is_bank"]) for t in tickers]
     if metric in not_for_banks() and any(banks):
         raise Clarify(f"{metric.replace('_', ' ').capitalize()} is not a meaningful measure for a bank. "
@@ -270,8 +341,20 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
         raise Clarify("Which companies should I compare?")
 
     # fiscal years
-    from_model = [y for y in (plan.fiscal_years if not follow else []) if y in years_corpus]
-    years = years_in(question) or from_model or (memory.get("fiscal_years", []) if follow else [])
+    # CHANGED (17 Nov 2026): the model's year is used only when the question points at a year in words.
+    # OLD: from_model = [y for y in (plan.fiscal_years if not follow else []) if y in years_corpus]
+    #      years = years_in(question) or from_model or (memory.get("fiscal_years", []) if follow else [])
+    # WHY: "summarize ... for HUL" + "Business Performance" named no year, yet it was answered for FY2025-26:
+    #      the model had filled in a year on its own and the code accepted it. A year the user never gave is a
+    #      guess. Now: a year written in the question; else "latest / current / this year" (the newest report);
+    #      else "last / previous year" (the one before); else the remembered year of a follow-up; else ask.
+    if re.search(r"\b(latest|most recent|current|this) (financial |fiscal )?(year|report|annual report)\b|\blatest\b", q):
+        relative = [years_corpus[-1]]
+    elif re.search(r"\b(last|previous|prior) (financial |fiscal )?year\b", q) and not says_yoy:
+        relative = [previous_year(years_corpus[-1])]
+    else:
+        relative = []
+    years = years_in(question) or relative or (memory.get("fiscal_years", []) if follow else [])
     if not years:
         raise Clarify("Which fiscal year, " + " or ".join(fy_label(y) for y in years_corpus) + "?")
     years = sorted(set(years))

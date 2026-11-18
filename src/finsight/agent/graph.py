@@ -34,6 +34,8 @@ from finsight.schemas import AgentAnswer
 from finsight.tools.base import ToolError
 
 MAX_REWRITES = 2
+from finsight.corpus import years_in  # noqa: E402   (17 Nov 2026: for the "taken from the previous question" note)
+from finsight.tools.company_match import find_companies  # noqa: E402
 
 
 def run(question: str, session_id: str = "default", llm=None, memory: Memory | None = None,
@@ -53,19 +55,33 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
     def over_budget() -> bool:
         return llm.tokens > settings.token_budget
 
+    # NEW (17 Nov 2026): was the previous turn a clarifying question? Then this message may be the reply to it.
+    # The unfinished question is read AND forgotten here, so it can affect this one turn only (memory.py has
+    # the reason for keeping it).
+    pending = memory.pop_pending(session_id)
+
     # 1. guard (code only, no tokens)
     refused = guard(question, trace)
     if refused:
         return done(refused)
 
     # 2. planner (model fills slots; code validates them)
-    slots = memory.get(session_id)
+    # OLD: slots = memory.get(session_id)
+    slots = {k: v for k, v in memory.get(session_id).items() if not k.startswith("_")}      # "_pending" is not a slot
+    # NEW (17 Nov 2026): complete the unfinished question with the reply, and plan THAT text. A message that
+    # reads like a new question of its own is left alone and the unfinished one is simply dropped.
+    asked = question
+    if pending and planner.is_reply(question):
+        asked = planner.merge_reply(pending, question)
+        trace.append({"node": "planner", "note": "reply to my clarifying question; planning the completed question", "question": asked})
     try:
-        draft = planner.draft_plan(question, slots, llm)
+        # OLD: draft = planner.draft_plan(question, slots, llm)   ...   plan = planner.resolve(draft, question, slots)
+        draft = planner.draft_plan(asked, slots, llm)
         trace.append({"node": "planner", "model_slots": draft.model_dump(exclude_none=True)})
-        plan = planner.resolve(draft, question, slots)
+        plan = planner.resolve(draft, asked, slots)
     except planner.Clarify as c:
         trace.append({"node": "planner", "clarify": str(c)})
+        memory.set_pending(session_id, asked)           # NEW (17 Nov 2026): keep what was asked, for the reply
         return done(AgentAnswer(status="clarify", clarifying_question=str(c), answer=str(c)))
     except planner.Refuse as r:
         trace.append({"node": "planner", "refused": r.reason})
@@ -112,6 +128,9 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
         trace.append({"node": "critic", "attempt": attempt + 1, "ok": verdict.ok, "reasons": verdict.reasons})
         if verdict.ok:
             ans.verified = True
+            # NEW (17 Nov 2026): say so when the company or year was not in the question but came from memory.
+            if plan.is_follow_up and not (find_companies(asked) and years_in(asked)):
+                ans.caveats.append("Company or year not stated in the question; taken from the previous question.")
             memory.save(session_id, {"companies": plan.companies, "fiscal_years": plan.fiscal_years, "scope": plan.scope,
                                      "metric": plan.metric, "item": plan.item, "intent": plan.intent})
             return done(ans)

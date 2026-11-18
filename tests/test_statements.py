@@ -63,6 +63,18 @@ def test_classify_page():
     assert classify(kpi, 800, "standalone") is None
 
 
+def test_schedule_pages_are_not_statements():
+    """Added 17 Nov 2026. A schedule page names the statement in its heading but is not the statement."""
+    sched = [line(20, (300, "SCHEDULES TO THE CONSOLIDATED BALANCE SHEET")), line(40, (200, "As at March 31, 2025")), line(60, (200, "SCHEDULE 3 - DEPOSITS"))]
+    assert classify(sched, 800) is None
+    one = [line(20, (300, "Consolidated Balance Sheet")), line(40, (200, "Schedule 1 - Capital"))]
+    assert classify(one, 800) is None
+    cash = [line(20, (300, "Standalone Cash Flow Statement")), line(40, (300, "Add: provision for income tax (refer Schedule 18)"))]
+    assert classify(cash, 800) == ("cash_flow", "standalone")                    # "refer Schedule 18" inside a row is fine
+    bs = [line(20, (300, "Standalone Balance Sheet")), line(40, (300, "Schedule No. (Current year) (Previous year)"))]
+    assert classify(bs, 800) == ("balance_sheet", "standalone")                  # the column header "Schedule No." is fine
+
+
 def test_two_plain_columns_are_current_and_prior_year():
     rows = [line(100 + 10 * i, (120, "Item"), (400, f"{1000 + i:,}"), (480, f"{900 + i:,}")) for i in range(8)]
     assert [len(g) for g in column_groups(rows)] == [1, 1]
