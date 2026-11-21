@@ -61,6 +61,8 @@ pdf = [
 dev = [
     "pytest>=8.2",
     "ruff>=0.5",
+    # ADDED (17 Nov 2026): reads and writes eval/gold_workbook.xlsx (eval/make_gold_workbook.py, eval/compute_gold.py).
+    "openpyxl>=3.1",
 ]
 # Everything in one go (recommended on Python 3.11, where the whole stack has wheels).
 all = [

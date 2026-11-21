@@ -54,3 +54,30 @@ def list_metrics(is_bank: bool | None = None) -> list[str]:
     if is_bank is False:
         return sorted(data["non_bank"])
     return sorted(set(data["bank"]) | set(data["non_bank"]))
+
+
+# =====================================================================================================
+# ADDED (agent layer, 13 Nov 2026). The functions above are unchanged.
+# WHY: config/glossary.yaml gained three sections (line_items, derived_inputs, reported). The agent needs
+# them to (a) know which statement lines exist, (b) turn an abstract formula input such as `ebit` into
+# statement lines, and (c) know which ratios must be looked up as reported instead of calculated.
+# =====================================================================================================
+def line_items() -> dict:
+    """canonical item -> {statement, labels, applies?, occurrence?} from the `line_items` section."""
+    return dict(_load().get("line_items", {}))
+
+
+def derived_inputs() -> dict:
+    """abstract input (ebit, total_debt, ...) -> {inputs, formula} from the `derived_inputs` section."""
+    return dict(_load().get("derived_inputs", {}))
+
+
+def reported_metrics() -> dict:
+    """metric -> {unit, search, keywords, hint} for ratios the company states itself."""
+    return dict(_load().get("reported", {}))
+
+
+def not_for_banks() -> set[str]:
+    """Metrics defined only in the non_bank set: asking for one about a bank triggers a clarification."""
+    data = _load()
+    return set(data["non_bank"]) - set(data["bank"]) - {"yoy_change", "return_on_equity", "earnings_per_share"}

@@ -25,13 +25,25 @@ def write_chunk_corpus(chunks: list[dict]) -> Path:
     return out
 
 
-def index_chunks(chunks: list[dict], store: QdrantStore | None = None, batch: int = 128) -> int:
-    """Embed and upsert all chunks into Qdrant. Returns the number of points indexed."""
+# CHANGED (18 Nov 2026): new argument `replace` (see the note in ingest/run_ingest.py).
+# OLD: def index_chunks(chunks: list[dict], store: QdrantStore | None = None, batch: int = 128) -> int:
+def index_chunks(chunks: list[dict], store: QdrantStore | None = None, batch: int = 128, replace: str | None = None) -> int:
+    """Embed and upsert all chunks into Qdrant. Returns the number of points indexed.
+
+    replace: None  -> add to what is there (old behaviour; re-indexing the same chunks now overwrites them,
+                      because point ids are derived from the chunk id);
+             "all" -> empty the collection first (a full ingest);
+             "TCS" -> remove that ticker's points first (an ingest of one company).
+    """
     if not chunks:
         logger.warning("no chunks to index")
         return 0
     store = store or QdrantStore()
+    if replace == "all":
+        store.drop_collection()
     store.ensure_collection(embeddings.embedding_dim())
+    if replace and replace != "all":
+        store.delete_where({"ticker": replace})
     total = 0
     for i in range(0, len(chunks), batch):
         part = chunks[i : i + batch]
