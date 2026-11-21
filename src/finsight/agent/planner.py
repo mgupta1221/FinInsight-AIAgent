@@ -37,7 +37,21 @@ METRIC_WORDS = [("operating_margin", r"operating margin|ebit margin"), ("ebitda_
                 ("cost_to_income", r"cost[- ]to[- ]income"), ("gross_npa_ratio", r"gross npa|gnpa"),
                 ("net_npa_ratio", r"net npa|nnpa"), ("casa_ratio", r"\bcasa\b"),
                 ("net_interest_margin", r"net interest margin|\bnim\b"), ("crar", r"capital adequacy|\bcrar\b"),
-                ("earnings_per_share", r"earnings per share|\beps\b")]
+                ("earnings_per_share", r"earnings per share|\beps\b"),
+                # ADDED (19 Nov 2026): see config/glossary.yaml
+                ("effective_tax_rate", r"effective tax rate|\btax rate\b"),
+                ("provision_coverage_ratio", r"provision coverage|\bpcr\b"),
+                ("short_term_borrowings_share", r"borrowings?\b.*\bwithin (one|1|a) year|(share|proportion|percentage) of .*borrowings.*(current|short[- ]term)")]
+
+# NEW (19 Nov 2026): a "what share / what percentage of ..." question for which the glossary has no formula.
+# WHY: "What share of ITC's total segment revenue came from the FMCG-Others segment?" was answered with ITC's
+#      revenue from operations. The agent knew no ratio by that name, saw the word "revenue" and answered a
+#      simpler question than the one asked. Such a question is now given the metric TEXT_RATIO: the executor
+#      finds the two numbers (the part and the whole) in the report text, checks that both are printed on the
+#      cited page and divides them (executor.text_ratio). If it cannot, it says so.
+TEXT_RATIO = "share_from_report"
+SHARE_WORDS = re.compile(r"(?<!per )\b(share|proportion|percentage|part) of\b|\bwhat (share|proportion|percentage)\b|"
+                         r"as a (percentage|per cent|percent|%) of|\b(per cent|percent|%) of\b")
 # Exact phrases: if one is in the question it wins, even over the model's choice of item.
 ITEM_PHRASES = [("total_expenses", r"total expenses|total expenditure|total cost"), ("total_income", r"total income"),
                 ("employee_benefits_expense", r"employee (benefits? )?(expenses?|costs?)|staff costs?|salary costs?"),
@@ -139,6 +153,35 @@ def is_reply(text: str) -> bool:
     q = text.lower()
     names_figure = any(re.search(rx, q) for _, rx in METRIC_WORDS + ITEM_PHRASES + ITEM_WORDS) or bool(re.search(r"summar", q))
     return not (find_companies(text) and names_figure and years_in(text))      # company + figure + year = a full question
+
+
+# NEW (18 Nov 2026): used by graph.py to carry a SUMMARY over to another year or company.
+_LINK_WORDS = set("and for what about how in of the fy same now then also please year s".split())
+
+
+def only_company_or_year(text: str) -> bool:
+    """True for a message that gives just a year and/or a company: "FY25-26", "and for ITC", "what about 2024-25"."""
+    from finsight.corpus import _FY
+    from finsight.tools.company_match import _aliases
+    if not (years_in(text) or find_companies(text)):
+        return False
+    rest = _FY.sub(" ", text)
+    for ticker in find_companies(text):
+        for name in sorted(_aliases().get(ticker, []), key=len, reverse=True):
+            rest = re.sub(rf"\b{re.escape(name)}\b('s)?", " ", rest, flags=re.I)
+    return all(w in _LINK_WORDS for w in re.findall(r"[a-z]+", rest.lower()))
+
+
+# NEW (18 Nov 2026, later): used by graph.py to carry the company and year of a SUMMARY over to another topic.
+_TOPIC_WORDS = re.compile(r"risk|strateg|outlook|priorit|commentary|management discussion|md&a|performance")
+
+
+def only_summary_topic(text: str) -> bool:
+    """True for a short message that names a summary topic and no figure: "key risks", "and the strategy?"."""
+    q = text.lower()
+    if len(re.findall(r"[a-z]+", q)) > 6 or not _TOPIC_WORDS.search(q):
+        return False
+    return not any(re.search(rx, q) for _, rx in METRIC_WORDS + ITEM_PHRASES + ITEM_WORDS)
 
 
 def merge_reply(pending: str, reply: str) -> str:
@@ -266,6 +309,9 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
         metric = None
     if not metric:
         metric = next((m for m, rx in METRIC_WORDS if re.search(rx, q)), None)
+    # NEW (19 Nov 2026): a share / percentage question with no glossary formula (see TEXT_RATIO above).
+    if not metric and SHARE_WORDS.search(q) and not says_yoy and not is_summary:
+        metric = TEXT_RATIO
     # OLD: item = next(... ITEM_PHRASES ...) or (plan.item if plan.item in all_items() else None)
     item = next((i for i, rx in ITEM_PHRASES if re.search(rx, q)), None) or (plan.item if plan.item in all_items() and not off_topic and not silent_follow_up else None)
     if not item and not (metric and metric != "yoy_change"):
@@ -335,6 +381,16 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
                       "Would you like interest earned, total income, operating expenses or net profit instead?")
     if intent != "summary" and re.search(r"\bmargin\b", q) and not metric:
         raise Clarify("Which margin do you mean: operating margin or net profit margin?")
+    # NEW (19 Nov 2026): a ratio or rate the agent has no formula for is not answered with a single figure.
+    # WHY: before "effective tax rate" was added, that question was answered with the tax expense alone: the
+    #      model had filled in the item "tax_expense" and the code accepted it. A question that asks for a
+    #      "ratio" or a "rate" must end in a ratio. If none is recognised, the agent says which ones it has.
+    if intent != "summary" and not metric and re.search(r"\b(ratio|rate)\b", q) and not says_yoy:
+        have = ("CASA ratio, gross NPA ratio, net NPA ratio, net interest margin, capital adequacy ratio, cost-to-income, "
+                "return on assets, provision coverage ratio or effective tax rate") if all(banks) else \
+               ("operating margin, EBITDA margin, net profit margin, return on equity, return on capital employed, "
+                "debt-to-equity, current ratio, effective tax rate or earnings per share")
+        raise Clarify(f"I do not have a formula for that ratio. I can give: {have}. Which one would you like?")
     if intent != "summary" and not metric and not item:
         raise Clarify("Which figure or ratio would you like (for example revenue, net profit or operating margin)?")
     if intent == "compare_rank" and len(tickers) < 2:
@@ -372,13 +428,55 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
             raise Refuse("not_in_corpus", "That fiscal year is not in my corpus. I cover "
                          + " and ".join(fy_label(y) for y in years_corpus) + ".")
 
-    scope = "standalone" if "standalone" in q else "consolidated" if "consolidated" in q else \
-        (memory.get("scope") if follow else None) or plan.scope or DEFAULT_SCOPE
+    # OLD:
+    # scope = "standalone" if "standalone" in q else "consolidated" if "consolidated" in q else \
+    #     (memory.get("scope") if follow else None) or plan.scope or DEFAULT_SCOPE
+    # NEW (19 Nov 2026): for a BANK, a question that does not say "consolidated" is about the bank itself.
+    # WHY: "What was HDFC Bank's net profit in FY2025-26?" was read as consolidated and ended in "no figure for
+    #      'net_profit'". The evaluation set expects the STANDALONE figure for every bank question that names no
+    #      scope (15 questions: deposits, net profit, net interest income ...), which is also how a bank's
+    #      results are normally quoted. The model's own guess of the scope is not used for a bank. Other
+    #      companies keep the consolidated default. The answer always states the scope it used.
+    said = "standalone" if "standalone" in q else "consolidated" if "consolidated" in q else None
+    # OLD: remembered = memory.get("scope") if follow else None
+    # NEW (19 Nov 2026, later): a question that is complete in itself does not inherit the scope of the previous one.
+    # WHY: "Which had the higher debt-to-equity ratio in FY2025-26, Wipro or Tech Mahindra?" was asked right after
+    #      a Britannia question (standalone). The model marked it as a follow-up, so the remembered scope
+    #      "standalone" was applied to Wipro and Tech Mahindra, whose default is consolidated, and the answer
+    #      failed on Tech Mahindra's standalone borrowings. A question that names its own company, figure and
+    #      year stands alone. "And for Infosys?" still keeps the scope of the question before it.
+    self_contained = bool(find_companies(question)) and names_a_figure and bool(years_in(question))
+    remembered = memory.get("scope") if follow and not self_contained else None
+    if said or remembered:
+        scope = said or remembered
+    # OLD (earlier on 19 Nov):
+    # elif all(banks):
+    #     scope = "standalone"
+    # else:
+    #     scope = plan.scope or DEFAULT_SCOPE
+    # NEW (19 Nov 2026, later): the default comes from the company (config/companies.yaml `default_scope`; banks
+    # standalone). The model's guess of the scope is no longer used at all. See default_scope() below.
+    else:
+        scope = default_scope(tickers)
     if metric and metric_kind(metric) == "reported" and all(banks) and "consolidated" not in q:
         scope = "standalone"                      # banks report these ratios for the bank itself
     order = "lowest" if re.search(r"\b(lowest|lower|least|smallest|worst)\b", q) else "highest"
     return AgentPlan(intent=intent, companies=tickers, fiscal_years=years, scope=scope, metric=metric, item=item,
                      topic=plan.topic or question, order=order, is_follow_up=follow)
+
+
+def default_scope(tickers: list[str]) -> str:
+    """The statements a question is about when it names no scope.   NEW (19 Nov 2026, later)
+
+    One company: its `default_scope` in config/companies.yaml, else standalone for a bank, else consolidated.
+    Several companies: standalone if most of them default to standalone ("Rank HUL, ITC, Nestle India, Britannia
+    and Dabur ..." is standalone: four of the five), else consolidated.
+    """
+    def one(t: str) -> str:
+        p = get_company_profile(t)
+        return p.get("default_scope") or ("standalone" if p.get("is_bank") else DEFAULT_SCOPE)
+    scopes = [one(t) for t in tickers]
+    return "standalone" if scopes and scopes.count("standalone") * 2 > len(scopes) else DEFAULT_SCOPE
 
 
 def build_steps(plan: AgentPlan) -> list[AgentStep]:

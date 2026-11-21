@@ -20,9 +20,9 @@ import json
 import re
 
 from finsight.config import settings
-from finsight.corpus import fiscal_years
+from finsight.corpus import fiscal_years, fix_glyphs   # fix_glyphs: 19 Nov 2026
 from finsight.safety.sanitiser import sanitise
-from finsight.schemas import AgentPlan, AgentStep, Extracted, Figure
+from finsight.schemas import AgentPlan, AgentStep, Extracted, Figure, RatioParts   # RatioParts: 19 Nov 2026
 from finsight.tools.base import ToolError
 from finsight.tools.calculate import calculate, evaluate_expression
 from finsight.tools.compare_rank import compare_rank
@@ -39,16 +39,64 @@ TOOLS = {"get_financial_item": get_financial_item, "normalise_units": normalise,
 
 
 # Topic of a summary -> the words such a section of an annual report really uses (17 Nov 2026; see summarise()).
+# CHANGED (18 Nov 2026): each topic now also names the report sections where it is normally discussed.
+# OLD entries were (pattern, extra search words). WHY: with section labels that can be trusted (ingest/sections.py)
+# a summary can PREFER the right part of the report: a strategy summary should come from the overview and the
+# MD&A, not from a note on capital management. It is a preference, not a filter: if those sections return
+# nothing, passages from elsewhere are still used.
 SUMMARY_TOPICS = [
-    (r"risk", "principal risks risk management mitigation risks and opportunities"),
-    (r"strateg|outlook|priorit|future|plan", "strategy strategic priorities outlook growth opportunities way forward"),
-    (r"commentary|management discussion|md&a|mdna", "management discussion and analysis review of performance operating environment"),
-    (r"performance|results|business|financial review|growth", "revenue growth turnover profit margin volume growth segment performance financial highlights year in review"),
+    (r"risk", "principal risks risk management mitigation risks and opportunities",
+     ["risk", "mdna", "directors_report", "overview"]),
+    (r"strateg|outlook|priorit|future|plan", "strategy strategic priorities outlook growth opportunities way forward",
+     ["overview", "mdna", "directors_report"]),
+    (r"commentary|management discussion|md&a|mdna", "management discussion and analysis review of performance operating environment",
+     ["mdna", "directors_report", "overview"]),
+    (r"performance|results|business|financial review|growth", "revenue growth turnover profit margin volume growth segment performance financial highlights year in review",
+     ["mdna", "directors_report", "overview", "highlights"]),
 ]
 
 
 class Escalate(Exception):
     """The agent cannot complete the task reliably; hand back to the user with the reason."""
+
+
+class NotApplicable(ToolError):
+    """NEW (19 Nov 2026, later). The report itself says the thing asked about does not exist for this company
+    (Infosys: "The Group has no outstanding borrowings"). Not a failure to find a figure: an answer in words."""
+
+    def __init__(self, message: str, citation: str):
+        super().__init__(message)
+        self.citation = citation
+
+
+# NEW (19 Nov 2026, later): helpers for text_ratio(). See the notes there.
+_NUMERIC = re.compile(r"^\(?-?[\d.]+\)?%?$")
+_GENERIC = set("""share proportion portion percentage percent per cent part total came come comes coming due within one year
+    years revenue revenues sales income business segment segments advances gross net company bank group its their
+    report reported amount value figure ratio rate fy""".split())
+
+
+def _row_of(flat: str, digits: str):
+    """Where a printed number sits in its table row: (row label, numbers of the row, position in the row).
+
+    "FMCG - Others 24203.75 6.00 24209.75 21975.28 ..." and "24209.75" -> ("FMCG - Others", [...], 2).
+    """
+    tokens = flat.split()
+    at = next((i for i, t in enumerate(tokens) if t.strip("()%") == digits), None)
+    if at is None:
+        return None
+    lo = hi = at
+    while lo > 0 and (_NUMERIC.match(tokens[lo - 1]) or tokens[lo - 1] in "-–—"):
+        lo -= 1
+    while hi + 1 < len(tokens) and (_NUMERIC.match(tokens[hi + 1]) or tokens[hi + 1] in "-–—"):
+        hi += 1
+    while lo < at and tokens[lo] in "-–—":                      # a dash that belongs to the label ("FMCG - Others")
+        lo += 1
+    label, k = [], lo - 1
+    while k >= 0 and len(label) < 7 and not re.search(r"\d", tokens[k]):
+        label.insert(0, tokens[k])
+        k -= 1
+    return " ".join(label), tokens[lo:hi + 1], at - lo
 
 
 class Run:
@@ -93,13 +141,49 @@ class Run:
     def input_value(self, company: str, name: str, fy: str, from_report: str | None = None, label: str | None = None) -> float:
         """A formula input: a statement line, or an abstract input built from statement lines (glossary derived_inputs)."""
         if name in line_items():
-            return self.statement_figure(company, name, fy, from_report, name=label)
+            # OLD: return self.statement_figure(company, name, fy, from_report, name=label)
+            # NEW (19 Nov 2026): a line with a `fallback` in the glossary is built from its parts when the
+            # statement does not print it (tax expense = current tax + deferred tax). See config/glossary.yaml.
+            fallback = line_items()[name].get("fallback")
+            try:
+                v = self.statement_figure(company, name, fy, from_report, name=label)
+                return abs(v) if line_items()[name].get("always_positive") else v      # see tax_from_parts in the glossary
+            except ToolError:
+                if not fallback:
+                    raise
+                self.trace.append({"note": f"no '{name}' line in the statement; built from {derived_inputs()[fallback]['inputs']}"})
+                name = fallback
         spec = derived_inputs().get(name)
         if spec is None:
             raise ToolError(f"'{name}' is not a statement line and has no derivation in the glossary")
-        parts = {k: self.statement_figure(company, k, fy, from_report) for k in spec["inputs"]}
+        # OLD: parts = {k: self.statement_figure(company, k, fy, from_report) for k in spec["inputs"]}
+        # NEW (19 Nov 2026): inputs marked `optional` in the glossary count as zero when the statement has no such
+        # line, as long as at least one of them is found.
+        # WHY: Tech Mahindra's balance sheet has ONE "Borrowings" line (current); there is no non-current one. Total
+        #      debt = non-current + current then failed on the missing line, and so did "Which had the higher
+        #      debt-to-equity ratio, Wipro or Tech Mahindra?". A company with no borrowings line at all still
+        #      raises the error (the agent does not invent a zero).
+        optional, parts, missing = set(spec.get("optional", [])), {}, []
+        for k in spec["inputs"]:
+            try:
+                parts[k] = self.statement_figure(company, k, fy, from_report)
+            except ToolError:
+                if k not in optional:
+                    raise
+                parts[k] = 0.0
+                missing.append(k)
+        if missing and len(missing) == len(optional):
+            raise ToolError(f"no figure for '{name}' ({company} FY{fy} {self.plan.scope})")
+        if missing:
+            self.trace.append({"note": f"no line for {missing} in the statement; counted as zero"})
+            if spec.get("single_name"):                        # one line only: show it under its plain name
+                self.figures[-1].name = spec["single_name"]
         value = self.call("evaluate_expression", expr=spec["formula"], variables=parts)
         self.trace.append({"note": f"{name} = {spec['formula']} = {value:,.2f} crore"})
+        # OLD: return value
+        if spec.get("always_positive") and value < 0:              # NEW (19 Nov 2026): see tax_from_parts in the glossary
+            self.trace.append({"note": f"{name} is printed as a deduction (negative); taken as {abs(value):,.2f}"})
+            value = abs(value)
         return value
 
     @staticmethod
@@ -132,10 +216,13 @@ class Run:
             raise ToolError(f"search is unavailable ({str(e)[:80]}); has ingestion been run?") from e
         passages = []
         for h in hits:
-            text = h["text"]
+            text, scope = fix_glyphs(h["text"]), None                # 19 Nov 2026: repair private-font digits (corpus.fix_glyphs)
             if text.startswith("[") and "\n" in text:             # chunk header "[Company | FY.. | p214]" is not report text
+                # NEW (19 Nov 2026): the header also says whether the page is standalone or consolidated; kept for text_ratio()
+                scope = next((w for w in ("standalone", "consolidated") if w in text.split("\n", 1)[0]), None)
                 text = text.split("\n", 1)[1]
-            passages.append({"page": h["page"], "citation": h["citation"], "text": text, "score": h.get("score")})
+            passages.append({"page": h["page"], "citation": h["citation"], "text": text, "score": h.get("score"),
+                             "section": h.get("section"), "scope": scope})   # 18 Nov 2026: section kept, for summarise()
         self.trace.append({"tool": "search_report", "args": {"query": query, "company": company, "fiscal_year": fy},
                            "result": [{"page": p["page"], "citation": p["citation"]} for p in passages]})
         if not passages:
@@ -145,7 +232,26 @@ class Run:
     def reported_figure(self, company: str, metric: str, fy: str) -> float:
         """A ratio the company states itself: search the report, let the model point at it, then verify in code."""
         spec = reported_metrics()[metric]
-        passages = self.search(spec["search"], company, fy, top_k=4)
+        # OLD: passages = self.search(spec["search"], company, fy, top_k=4)
+        # NEW (19 Nov 2026): more passages, the pages of the asked scope first, and a direct read by pattern.
+        # WHY: see `patterns` in config/glossary.yaml (Axis Bank gross NPA ratio). With 4 passages the note that
+        #      prints the ratio was often not among them.
+        passages = self.search(spec["search"], company, fy, top_k=8)
+        passages = [p for p in passages if p.get("scope") == self.plan.scope] + [p for p in passages if p.get("scope") != self.plan.scope]
+        # When the line is printed on several pages, the page of the asked scope wins, then the EARLIEST page.
+        # WHY the earliest: Kotak's FY2024-25 notes print the table twice, this year's on page 241 (1.42%) and last
+        #      year's on page 242 (1.39%). The current year always comes first.
+        for rx in spec.get("patterns", []):
+            hits = [(p, m) for p in passages for m in [re.search(rx, sanitise(p["text"])[0], re.I)] if m]
+            if hits:
+                same = [h for h in hits if h[0].get("scope") == self.plan.scope] or hits
+                p, m = min(same, key=lambda h: h[0]["page"])
+                value = float(m.group(1))
+                self.trace.append({"node": "extract", "metric": metric, "note": f"read by pattern on {p['citation']}: {m.group(0)[:120]}"})
+                self.figures.append(Figure(name=metric, company=company, fiscal_year=fy, value=value, unit=spec["unit"],
+                                           page=p["page"], citation=p["citation"]))
+                return value
+        passages = passages[:5]
         blocks, removed = [], 0
         for p in passages:
             text, n = sanitise(p["text"])
@@ -186,6 +292,116 @@ class Run:
                                    page=page["page"], citation=page["citation"]))
         return float(ex.value)
 
+    # NEW (19 Nov 2026): a share / percentage that is not in the glossary, worked out from the report text.
+    # WHY: see planner.TEXT_RATIO. This is the "multi-step" path: search the notes, pick the two rows, check
+    #      them, divide. The model only POINTS at numbers; code checks that each one is printed on the cited
+    #      page and does the division. Both numbers must come from the same page, so they are in the same unit
+    #      and from the same table. If the report states the percentage itself, that printed figure is used.
+    #      What code cannot check is whether the model picked the right ROWS and the right year's column, so
+    #      the answer names the two rows and carries a note asking the reader to confirm them.
+    def text_ratio(self, company: str, fy: str, question: str) -> dict:
+        found = self.search(question, company, fy, top_k=8)
+        found = [p for p in found if p.get("scope") == self.plan.scope] + [p for p in found if p.get("scope") != self.plan.scope]
+        pages: dict[str, dict] = {}                              # passages of one page are read together
+        for p in found:
+            text, n = sanitise(p["text"])
+            if n:
+                self.trace.append({"note": f"sanitiser removed {n} instruction-like sentence(s) from {p['citation']}"})
+            page = pages.setdefault(p["citation"], {"page": p["page"], "citation": p["citation"], "scope": p.get("scope"), "text": ""})
+            page["text"] = (page["text"] + " " + text).strip()[:2600]
+        pages = dict(list(pages.items())[:4])
+        system = ("You read excerpts of a company's annual report to answer a 'what share' or 'what percentage' question. "
+                  "Reply with JSON. If an excerpt states the percentage itself, put that number in stated_quote and say what it "
+                  "is in numerator_label. Otherwise give the two numbers needed: numerator_label and numerator_quote (the part), "
+                  "denominator_label and denominator_quote (the whole). Copy each number exactly as printed. Both numbers must "
+                  "come from the SAME excerpt, the same column and the requested year (the current year, not the previous "
+                  "year). citation is the bracketed id above that excerpt. If the excerpts do not contain the numbers, set "
+                  "found to false. Never calculate and never guess.")
+        year_end = "31 March 20" + fy[-2:]
+        user = (f"Question: {question}\nCompany: {company}. Year: FY{fy} (year ended {year_end}, column headed 20{fy[-2:]}).\n\n"
+                + "\n\n".join(f"[{c}]\n{p['text']}" for c, p in pages.items()))
+        parts = self.llm.json(system, user, RatioParts, max_tokens=200)
+        self.trace.append({"node": "extract", "metric": "share_from_report", "model_reply": parts.model_dump()})
+        page = pages.get(parts.citation.strip("[] ")) or (next(iter(pages.values())) if len(pages) == 1 else None)
+        fail = ToolError(f"could not find verifiable numbers for this share in the retrieved pages of {company} FY{fy}")
+        if not parts.found or page is None:
+            raise fail
+        flat = page["text"].replace(",", "")
+
+        # NEW (19 Nov 2026, later): the number must be ABOUT what was asked.
+        # WHY: "State Bank of India's restructured advances as a percentage of gross advances" was answered with
+        #      "Green Advances 2.83%". The figure was printed on the page, so the old check passed, but it is a
+        #      different thing. Now the words that make the question specific ("restructured"; "international";
+        #      "FMCG", "Others") must stand close to the number on the page, or in the label of its table row.
+        from finsight.agent.planner import _FILLER
+        from finsight.tools.company_match import _aliases
+        names = {w for n in _aliases().get(get_company_profile(company)["ticker"], []) for w in re.findall(r"[a-z]+", n.lower())}
+        specific = [w for w in dict.fromkeys(re.findall(r"[a-z]+", question.lower()))
+                    if len(w) > 2 and w not in _FILLER and w not in _GENERIC and w not in names]
+
+        def about(digits: str, label: str = "") -> bool:
+            m = re.search(rf"(?<![\d.]){re.escape(digits)}(?![\d])", flat)
+            near = (label + " " + flat[max(0, m.start() - 300):m.end() + 120]).lower() if m else label.lower()
+            return all(w in near for w in specific)
+
+        def printed(quote: str) -> float | None:
+            digits = re.sub(r"[^\d.]", "", quote).strip(".")
+            if not digits or re.search(rf"(?<![\d.]){re.escape(digits)}(?![\d])", flat) is None:
+                return None
+            try:
+                return float(digits)
+            except ValueError:
+                return None
+
+        def tidy(label: str, default: str) -> str:
+            return re.sub(r"\s+", " ", re.sub(r"[^A-Za-z &/,()'-]", " ", label)).strip()[:70] or default
+
+        def fig(name: str, value: float, unit: str) -> None:
+            self.figures.append(Figure(name=name, company=company, fiscal_year=fy, value=value, unit=unit,
+                                       page=page["page"], citation=page["citation"]))
+        stated = printed(parts.stated_quote) if parts.stated_quote else None
+        if stated is not None and not about(re.sub(r"[^\d.]", "", parts.stated_quote).strip(".")):
+            self.trace.append({"note": f"the percentage the model pointed at is not about {specific}; not used"})
+            raise fail
+        if stated is not None and 0 < stated <= 100:
+            label = tidy(parts.numerator_label, "the share")
+            fig(f"stated: {label}", stated, "percent")
+            return {"metric": "share_from_report", "value": stated, "unit": "percent", "formula": None,
+                    "labels": [label], "page_scope": page["scope"]}
+        num, den = printed(parts.numerator_quote), printed(parts.denominator_quote)
+        # NEW (19 Nov 2026, later): both numbers must come from the same COLUMN, and the rows are named from the page.
+        # WHY: for the ITC segment share the model took the part from the "Total" column (24,209.75) and the whole
+        #      from the "External" column (80,867.49): 29.94%, a mix of two columns. Each number is now located
+        #      in its table row. If the two rows have the same number of columns and the positions differ, the
+        #      whole is taken from the same position as the part (90,713.20 -> 26.69%). The labels shown in the
+        #      answer are the row names printed on the page ("FMCG - Others", "Segment Total"), not the model's
+        #      wording ("Segment Revenue", "Total Segment Revenue").
+        row_n = _row_of(flat, re.sub(r"[^\d.]", "", parts.numerator_quote).strip(".")) if num is not None else None
+        row_d = _row_of(flat, re.sub(r"[^\d.]", "", parts.denominator_quote).strip(".")) if den is not None else None
+        if row_n and row_d and len(row_n[1]) == len(row_d[1]) >= 2 and row_n[2] != row_d[2]:
+            try:
+                moved = float(row_d[1][row_n[2]].strip("()%"))
+                self.trace.append({"note": f"the whole was read from another column ({den:,.2f}); taken from the same column as the part ({moved:,.2f})"})
+                den = moved
+            except ValueError:
+                den = None
+        if num is not None and not about(re.sub(r"[^\d.]", "", parts.numerator_quote).strip("."), row_n[0] if row_n else ""):
+            self.trace.append({"note": f"the part the model pointed at is not about {specific}; not used"})
+            raise fail
+        if row_n and re.search(r"[A-Za-z]", row_n[0]):
+            parts.numerator_label = row_n[0]
+        if row_d and re.search(r"[A-Za-z]", row_d[0]):
+            parts.denominator_label = row_d[0]
+        if num is None or den is None or den == 0 or num > den:
+            self.trace.append({"note": "the numbers the model pointed at are not printed on the cited page, or the part is larger than the whole"})
+            raise fail
+        n_label, d_label = tidy(parts.numerator_label, "the part"), tidy(parts.denominator_label, "the whole")
+        fig(f"numerator: {n_label}", num, "as printed")
+        fig(f"denominator: {d_label}", den, "as printed")
+        value = self.call("evaluate_expression", expr="numerator / denominator * 100", variables={"numerator": num, "denominator": den})
+        return {"metric": "share_from_report", "value": round(value, 4), "unit": "percent", "formula": "numerator / denominator * 100",
+                "inputs": {"numerator": num, "denominator": den}, "labels": [n_label, d_label], "page_scope": page["scope"]}
+
     # ---- steps ---------------------------------------------------------------------------------
     def value_for_company(self, company: str) -> None:
         plan, fy = self.plan, self.plan.fiscal_years[-1]
@@ -198,12 +414,24 @@ class Run:
             out = self.call("calculate", metric="yoy_change", inputs={"current": cur_v, "previous": prev_v}, is_bank=is_bank)
             self.values[company] = {**out, "value": round(out["value"], 4), "current": cur_v, "previous": prev_v,
                                     "absolute_change": round(cur_v - prev_v, 4)}
+        elif plan.metric == "share_from_report":                  # NEW (19 Nov 2026): see text_ratio() above
+            self.values[company] = self.text_ratio(company, fy, plan.topic)
         elif plan.metric and plan.metric in reported_metrics():
             self.values[company] = {"metric": plan.metric, "value": self.reported_figure(company, plan.metric, fy),
                                     "unit": reported_metrics()[plan.metric]["unit"], "formula": None}
         elif plan.metric:
             spec = get_metric(plan.metric, is_bank)
-            inputs = {k: self.input_value(company, k, fy) for k in spec["inputs"]}
+            # OLD: inputs = {k: self.input_value(company, k, fy) for k in spec["inputs"]}
+            # NEW (19 Nov 2026, later): a company with no borrowings at all gets an answer in words.
+            # WHY: "What share of Infosys' total borrowings was due within one year?" ended in "no figure for
+            #      'current_borrowings'", which reads like a fault. Infosys has no borrowings, and its report
+            #      says so. When the borrowings lines are missing, the report text is searched for that statement.
+            try:
+                inputs = {k: self.input_value(company, k, fy) for k in spec["inputs"]}
+            except ToolError:
+                if plan.metric == "short_term_borrowings_share":
+                    self.no_borrowings(company, fy)
+                raise
             out = self.call("calculate", metric=plan.metric, inputs=inputs, is_bank=is_bank)
             self.values[company] = {**out, "value": round(out["value"], 4)}
         else:
@@ -211,6 +439,17 @@ class Run:
             last = self.figures[-1].unit.lower()
             unit = "crore" if (plan.item in derived_inputs() or last in AMOUNT_UNITS) else self.figures[-1].unit
             self.values[company] = {"metric": None, "value": round(v, 2), "unit": unit, "formula": None}
+
+    def no_borrowings(self, company: str, fy: str) -> None:
+        """Raise NotApplicable if the report states that the company has no borrowings (19 Nov 2026, later)."""
+        try:
+            found = self.search("no outstanding borrowings liquidity working capital", company, fy, top_k=6)
+        except ToolError:
+            return
+        for p in found:
+            if re.search(r"\bno (outstanding )?(borrowings|debt)\b|not taken any loans or other borrowings|\bdebt[- ]free\b", p["text"], re.I):
+                raise NotApplicable(f"{get_company_profile(company)['name']} states in its FY{fy} report that it has no outstanding "
+                                    f"borrowings ({p['citation']}), so there is no share of borrowings to work out", p["citation"])
 
     def summarise(self, company: str, fiscal_year: str, topic: str) -> None:
         # CHANGED (17 Nov 2026). OLD:
@@ -223,13 +462,15 @@ class Run:
         #      1. the topic is widened with the words such a section really uses (SUMMARY_TOPICS below), which on
         #         the same report brings up the CEO's statement, the letter to shareholders and the MD&A;
         #      2. at most one passage per page, up to 4 pages, so one page cannot fill the whole summary.
-        query = topic
-        for pattern, extra in SUMMARY_TOPICS:
+        query, preferred = topic, []
+        for pattern, extra, sections in SUMMARY_TOPICS:
             if re.search(pattern, topic.lower()):
-                query = f"{topic} {extra}"
+                query, preferred = f"{topic} {extra}", sections
                 break
+        found = self.search(query, company, fiscal_year, top_k=20)      # OLD: top_k=10, used in search order
+        ordered = [p for p in found if p.get("section") in preferred] + [p for p in found if p.get("section") not in preferred]
         passages, pages = [], set()
-        for p in self.search(query, company, fiscal_year, top_k=10):
+        for p in ordered:
             if p["page"] in pages:
                 continue
             pages.add(p["page"])

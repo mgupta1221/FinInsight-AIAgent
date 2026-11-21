@@ -118,7 +118,7 @@ python scripts\endpoint_check.py
 python -m pytest -q
 ```
 
-Expected: **128 passed**.
+Expected: **165 passed**.
 
 ## 8\. Build the figure store (needed for number questions)
 
@@ -175,3 +175,9 @@ streamlit run app\streamlit_app.py
 | `ModuleNotFoundError: finsight` | The venv is not active, or step 3 was skipped |
 
 &nbsp;
+## Quick lookup in the chat screen (added 19 Nov 2026)
+
+Nothing new to install. Start the chat screen as before (`streamlit run app/streamlit_app.py`). In the sidebar,
+under "Quick lookup": pick a sector, one or more companies, a figure or ratio, a year and the scope, then press
+"Get answer". Pick two or more companies to compare them. The list of figures changes with the sector (bank
+figures for banks). You can still type any question in the chat box.

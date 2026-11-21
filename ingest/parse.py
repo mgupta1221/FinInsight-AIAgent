@@ -21,7 +21,10 @@ def parse_pymupdf(path: str | Path) -> list[dict]:
     import pymupdf
 
     doc = pymupdf.open(str(path))
-    pages = [{"page": i + 1, "text": doc[i].get_text("text") or ""} for i in range(doc.page_count)]
+    # OLD: pages = [{"page": i + 1, "text": doc[i].get_text("text") or ""} for i in range(doc.page_count)]
+    # NEW (19 Nov 2026): digits printed with a private font are repaired as the page is read (finsight.corpus.fix_glyphs).
+    from finsight.corpus import fix_glyphs
+    pages = [{"page": i + 1, "text": fix_glyphs(doc[i].get_text("text") or "")} for i in range(doc.page_count)]
     doc.close()
     return pages
 

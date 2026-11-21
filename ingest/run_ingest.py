@@ -94,7 +94,9 @@ def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | 
                                  "(use --no-quality-gate to override)", prof["ticker"], fy, missing)
                     continue
 
-            pages = assign_sections(pages, is_bank=prof.get("is_bank", False))
+            # OLD (kept): pages = assign_sections(pages, is_bank=prof.get("is_bank", False))
+            # MOVED (18 Nov 2026) to after the figure extraction below, because the section labels now use the
+            # list of statement pages the extractor finds (see ingest/sections.py).
             meta = {
                 "company": prof["name"],
                 "ticker": prof["ticker"],
@@ -119,12 +121,21 @@ def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | 
             if figures_only:
                 continue
             # ---------------------------------------------------------------------------------------------
+            # NEW (18 Nov 2026): label the pages with the statement pages just found (page -> statement, scope).
+            statement_pages = {p["page"]: (p["statement"], p["scope"]) for p in found}
+            pages = assign_sections(pages, is_bank=prof.get("is_bank", False), statement_pages=statement_pages)
             all_chunks.extend(chunk_pages(pages, meta, keep_sections=keep))
 
     # write figure store
     if all_rows:
         settings.store_dir.mkdir(parents=True, exist_ok=True)
         df = pd.DataFrame(all_rows)
+        # NEW (18 Nov 2026): with --only, keep the other companies' rows that are already in the store.
+        # WHY: "--only INFY" used to write a store containing Infosys alone, silently removing the other 14.
+        old_csv = settings.store_dir / "statement_lines.csv"
+        if only and old_csv.exists():
+            old = pd.read_csv(old_csv, dtype={"fiscal_year": str, "report_fy": str})
+            df = pd.concat([old[old["ticker"].str.upper() != only.upper()], df], ignore_index=True)
         # OLD (kept):
         # df.to_parquet(settings.store_dir / "statement_lines.parquet", index=False)
         # NEW (14 Nov 2026): always write a CSV copy, and do not stop if parquet cannot be written.
@@ -143,10 +154,28 @@ def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | 
     if figures_only:
         return
     # write chunk corpus (for BM25) and index (for dense search)
-    write_chunk_corpus(all_chunks)
-    logger.info("wrote %d chunks", len(all_chunks))
+    # CHANGED (18 Nov 2026). OLD:
+    #     write_chunk_corpus(all_chunks)
+    #     logger.info("wrote %d chunks", len(all_chunks))
+    #     if do_index:
+    #         n = index_chunks(all_chunks)
+    # WHY: (1) every run ADDED its vectors to the index under new random ids, so a second run stored every chunk
+    #          twice (and mixed vectors from two embedding models). A full run now empties the collection first;
+    #          a "--only TICKER" run removes just that company's vectors first.
+    #      (2) "--only TICKER" overwrote chunks.jsonl with that one company, so keyword search lost the other 14.
+    #          The other companies' chunks are now kept.
+    corpus = all_chunks
+    if only:
+        old_path = settings.data_dir / "parsed" / "chunks.jsonl"
+        if old_path.exists():
+            import json
+            kept = [c for c in (json.loads(line) for line in open(old_path, encoding="utf-8") if line.strip())
+                    if str(c.get("ticker", "")).upper() != only.upper()]
+            corpus = kept + all_chunks
+    write_chunk_corpus(corpus)
+    logger.info("wrote %d chunks", len(corpus))
     if do_index:
-        n = index_chunks(all_chunks)
+        n = index_chunks(all_chunks, replace="all" if not only else only.upper())
         logger.info("indexed %d vectors into Qdrant", n)
 
 

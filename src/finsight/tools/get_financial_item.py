@@ -65,7 +65,11 @@ def _citation(ticker: str, fy: str, page: int) -> str:
 #   (line_item, value, unit, page, citation, matched) are unchanged, so existing callers keep working.
 #   Free text that is not a canonical id still works (old behaviour, on current-year rows).
 # =====================================================================================================
-_MARKER = re.compile(r"^(\(?[ivxlc]+[.)]?|\(?[a-z]\)|\d+[.)]?)\s+")
+# OLD: _MARKER = re.compile(r"^(\(?[ivxlc]+[.)]?|\(?[a-z]\)|\d+[.)]?)\s+")
+# NEW (19 Nov 2026): a single letter in front of a label is a list marker too ("E PROFIT BEFORE EXCEPTIONAL ITEMS
+# AND TAX", "G PROFIT BEFORE TAX"). WHY: Nestle letters its rows A, B, C ...; only the letters that also happen to be
+# Roman numerals (C, I) were removed, so Nestle's profit before tax was "not found" and its operating margin failed.
+_MARKER = re.compile(r"^(\(?[ivxlc]+[.)]?|\(?[a-z]\)|[a-z][.)]?|\d+[.)]?)\s+")
 
 
 def _clean(label: str) -> str:
@@ -157,6 +161,11 @@ def get_financial_item(
         if primary:
             q = q[q["page"].isin(primary)]
         cleaned = q["line_item"].map(_clean)
+        # NEW (19 Nov 2026): a company name fused to the front of a label is dropped ("WIPRO TOTAL EQUITY").
+        # WHY: on Wipro's balance sheet a page-header word runs into the row, so "total equity" was not found
+        #      and the debt-to-equity ratio failed.
+        own = {prof["ticker"].lower(), str(prof["name"]).split()[0].lower(), "integrated"}
+        cleaned = cleaned.map(lambda c: c.split(" ", 1)[1] if " " in c and c.split(" ", 1)[0] in own else c)
         labels = list(spec["labels"])
         hits = q[cleaned.isin(labels)]
         if hits.empty:

@@ -62,6 +62,13 @@ def template(plan: AgentPlan, result: dict) -> str:
         lead = "It is a tie at the top" if rk["tie"] else f"{_name(rk['winner'])} had the {rk['order']} {label}"
         return f"{lead} in {fy} ({scope}). In order: {parts}."
     c, v = next(iter(vals.items()))
+    # NEW (19 Nov 2026): a share worked out from the report text names the two rows it used (executor.text_ratio).
+    # No scope in the sentence: the page that was read decides it, and base_answer() adds it as a note.
+    if plan.metric == "share_from_report" and plan.intent != "compare_rank":
+        labels = v.get("labels") or ["The share"]
+        if len(labels) == 2:
+            return f"For {_name(c)}, {labels[0]} was {v['value']:.2f}% of {labels[1]} in {fy}."
+        return f"For {_name(c)}, the report states {labels[0]} as {v['value']:.2f}% in {fy}."
     if plan.metric == "yoy_change":
         direction = "rose" if v["value"] >= 0 else "fell"
         return (f"{_name(c)}'s {label} ({scope}) {direction} {abs(v['value']):.2f}% from {_num(v['previous'], 'crore')} in "
@@ -70,8 +77,14 @@ def template(plan: AgentPlan, result: dict) -> str:
     return f"{_name(c)}'s {label} was {_num(v['value'], v['unit'])} in {fy} ({scope})."
 
 
-def formula_for(plan: AgentPlan) -> str | None:
+# OLD: def formula_for(plan: AgentPlan) -> str | None:
+# NEW (19 Nov 2026): takes the executor's result too, because a share worked out from the report text has its
+# formula ("numerator / denominator * 100", or none when the report states the percentage) in the result.
+def formula_for(plan: AgentPlan, result: dict | None = None) -> str | None:
     """The glossary formula behind a computed metric or a derived item (None for a plain lookup)."""
+    if plan.metric == "share_from_report":
+        vals = (result or {}).get("values") or {}
+        return next(iter(vals.values())).get("formula") if vals else None
     if plan.metric and plan.metric not in reported_metrics():
         is_bank = bool(get_company_profile(plan.companies[0])["is_bank"])
         return get_metric(plan.metric, is_bank)["formula"]
@@ -83,7 +96,7 @@ def formula_for(plan: AgentPlan) -> str | None:
 def base_answer(plan: AgentPlan, result: dict) -> AgentAnswer:
     vals, figs = result["values"], result["figures"]
     a = AgentAnswer(status="answered", intent=plan.intent, companies=plan.companies, fiscal_years=plan.fiscal_years,
-                    scope=plan.scope, metric=plan.metric or plan.item, inputs=figs, formula=formula_for(plan),
+                    scope=plan.scope, metric=plan.metric or plan.item, inputs=figs, formula=formula_for(plan, result),   # 19 Nov 2026: + result
                     citations=sorted({f.citation for f in figs if f.citation}))
     if plan.intent == "compare_rank":
         a.ranking = [r["name"] for r in result["ranking"]["ranking"]]
@@ -92,6 +105,23 @@ def base_answer(plan: AgentPlan, result: dict) -> AgentAnswer:
     else:
         v = next(iter(vals.values()))
         a.value, a.unit = v["value"], v["unit"]
+    # NEW (19 Nov 2026, later): say so when a figure for one year is read from another year's report.
+    # WHY: see app/components.py (input_rows). "FY2024-25 ... page 354" was looked up in the wrong report.
+    for f in figs:
+        m = re.search(r"-FY(\d\d)(\d\d)-p", f.citation or "")
+        report = f"20{m.group(1)}-{m.group(2)}" if m else None
+        if report and report != f.fiscal_year:
+            note = (f"The {fy_label(f.fiscal_year)} figure is read from the previous-year column of the {fy_label(report)} "
+                    f"report (page {f.page}), so both years are on the same basis.")
+            if note not in a.caveats:
+                a.caveats.append(note)
+    # NEW (19 Nov 2026): say plainly what was and was not checked for a share read from the report text.
+    if plan.metric == "share_from_report":
+        a.caveats.append("These numbers were picked from the report text and checked to be printed on the cited page. "
+                         "Please confirm that they are the right rows and the right year's column.")
+        scopes = {v.get("page_scope") for v in vals.values() if v.get("page_scope")}
+        if len(scopes) == 1:
+            a.caveats.append(f"The cited page belongs to the {scopes.pop()} statements.")
     if any(f.unit.lower() in ("thousand", "million", "lakh", "billion") for f in figs):
         a.caveats.append("Amounts are converted to ₹ crore from the unit used in the report.")
     return a

@@ -46,6 +46,20 @@ non_bank:
     unit: currency_per_share
     note: "Prefer the reported basic EPS; compute only if not reported."
 
+  # ADDED (19 Nov 2026): two ratios asked by the multi-step evaluation questions.
+  # WHY: "What was TCS' effective tax rate?" was answered with the tax expense alone, because the agent had no
+  #      formula for it. Both inputs of each ratio are statement lines already in the figure store.
+  effective_tax_rate:
+    inputs: [tax_expense, profit_before_tax_after_exceptional_items]
+    formula: "tax_expense / profit_before_tax_after_exceptional_items * 100"
+    unit: percent
+    note: "Total tax expense over profit before tax (after exceptional items)."
+  short_term_borrowings_share:
+    inputs: [current_borrowings, total_debt]
+    formula: "current_borrowings / total_debt * 100"
+    unit: percent
+    note: "Share of total borrowings due within one year (current borrowings)."
+
 # ---- Bank metrics (Banking Regulation Act 3rd Schedule + RBI) ----
 bank:
   gross_npa_ratio:
@@ -77,6 +91,16 @@ bank:
     formula: "total_capital / risk_weighted_assets * 100"
     unit: percent
     note: "Capital adequacy (Basel III). Prefer the reported CRAR; compute only if not reported."
+  # ADDED (19 Nov 2026), see the note in the non-bank section above.
+  effective_tax_rate:
+    inputs: [tax_expense, profit_before_tax_after_exceptional_items]
+    formula: "tax_expense / profit_before_tax_after_exceptional_items * 100"
+    unit: percent
+  provision_coverage_ratio:
+    inputs: [npa_provisions, gross_npa]
+    formula: "npa_provisions / gross_npa * 100"
+    unit: percent
+    note: "Looked up as the bank states it (see the `reported` section)."
 
 
 # =====================================================================================================
@@ -96,7 +120,11 @@ bank:
 
 # applies: bank | non_bank | (absent = both). labels: lower-case label as printed (list markers ignored).
 line_items:
-  revenue_from_operations: {statement: pnl, applies: non_bank, labels: ["revenue from operations", "revenues from operations"]}
+  # OLD: revenue_from_operations: {statement: pnl, applies: non_bank, labels: ["revenue from operations", "revenues from operations"]}
+  # NEW (19 Nov 2026): fallback. WHY: Britannia prints "Sale of goods" and "Other operating revenues" under a heading
+  #      "Revenue from operations" that carries no number of its own, so the line was "not found" and every Britannia
+  #      margin failed. When the line is missing it is built as total income - other income (the same amount).
+  revenue_from_operations: {statement: pnl, applies: non_bank, labels: ["revenue from operations", "revenues from operations"], fallback: revenue_from_total_income}
   other_income:            {statement: pnl, labels: ["other income"]}
   # CHANGED (15 Nov 2026): bank_labels / bank_occurrence added to total_income, total_expenses, total_assets.
   # OLD:
@@ -114,7 +142,18 @@ line_items:
   depreciation:            {statement: pnl, applies: non_bank, labels: ["depreciation and amortisation expense", "depreciation and amortization expense", "depreciation and amortisation expenses", "depreciation and amortization expenses", "depreciation and amortisation", "depreciation and amortization"]}
   finance_costs:           {statement: pnl, applies: non_bank, labels: ["finance costs", "finance cost"]}
   profit_before_tax:       {statement: pnl, labels: ["profit before tax", "profit before exceptional items and tax", "profit before exceptional item and tax"]}
-  tax_expense:             {statement: pnl, labels: ["total tax expense", "tax expense"]}
+  # OLD: tax_expense:             {statement: pnl, labels: ["total tax expense", "tax expense"]}
+  tax_expense:             {statement: pnl, labels: ["total tax expense", "total tax expenses", "tax expense", "tax expenses"], fallback: tax_from_parts, always_positive: true}
+  # ADDED (19 Nov 2026) for effective_tax_rate.
+  # WHY (1): a company with exceptional items prints two lines, "Profit before exceptional items and tax" and
+  #          "Profit before tax". `profit_before_tax` above accepts either and takes the first on the page. Tax
+  #          is charged on the profit AFTER exceptional items, so the tax rate needs exactly the second line.
+  # WHY (2): several statements print "Current tax" and "Deferred tax" but no total line (Infosys, ITC,
+  #          Nestle). `fallback` on tax_expense says: if the total line is missing, build it from the parts
+  #          (derived_inputs.tax_from_parts). The answer then lists the two parts as its inputs.
+  profit_before_tax_after_exceptional_items: {statement: pnl, labels: ["profit before tax"]}
+  current_tax:             {statement: pnl, labels: ["current tax"]}
+  deferred_tax:            {statement: pnl, labels: ["deferred tax"]}
   net_profit:              {statement: pnl, labels: ["profit for the year", "profit for the period", "net profit for the year", "profit after tax", "net profit"]}
   total_assets:            {statement: balance_sheet, labels: ["total assets"], bank_labels: ["total"], bank_occurrence: 0}
   total_equity:            {statement: balance_sheet, labels: ["total equity"]}
@@ -133,17 +172,32 @@ line_items:
 derived_inputs:
   ebit:                {inputs: [profit_before_tax, finance_costs, other_income], formula: "profit_before_tax + finance_costs - other_income"}
   ebitda:              {inputs: [profit_before_tax, finance_costs, other_income, depreciation], formula: "profit_before_tax + finance_costs - other_income + depreciation"}
-  total_debt:          {inputs: [non_current_borrowings, current_borrowings], formula: "non_current_borrowings + current_borrowings"}
+  # OLD: total_debt:          {inputs: [non_current_borrowings, current_borrowings], formula: "non_current_borrowings + current_borrowings"}
+  # NEW (19 Nov 2026): `optional`. A company may print only one "Borrowings" line (Tech Mahindra: current only).
+  #      The missing one counts as zero; the single line found is shown as "borrowings". See executor.input_value.
+  total_debt:          {inputs: [non_current_borrowings, current_borrowings], formula: "non_current_borrowings + current_borrowings", optional: [non_current_borrowings, current_borrowings], single_name: borrowings}
   capital_employed:    {inputs: [total_assets, current_liabilities], formula: "total_assets - current_liabilities"}
   net_interest_income: {inputs: [interest_earned, interest_expended], formula: "interest_earned - interest_expended"}
   net_total_income:    {inputs: [interest_earned, interest_expended, other_income], formula: "interest_earned - interest_expended + other_income"}
+  # always_positive: some statements print tax as a deduction, in brackets (Hindustan Unilever), so the store holds
+  # it as a negative number and the tax rate came out negative. The tax charge is taken as a positive amount.
+  # Limit: a real tax CREDIT for the year would also be turned positive; none of the 15 companies has one.
+  tax_from_parts:      {inputs: [current_tax, deferred_tax], formula: "current_tax + deferred_tax", always_positive: true}   # 19 Nov 2026, see tax_expense
+  revenue_from_total_income: {inputs: [total_income, other_income], formula: "total_income - other_income"}   # 19 Nov 2026, see revenue_from_operations
 
 # Ratios the company states itself: looked up in the report text, never recalculated by the agent.
 reported:
-  gross_npa_ratio:     {unit: percent, search: "gross NPA ratio gross NPAs to gross advances", keywords: ["gross npa", "gnpa", "gross non-performing"], hint: "gross non-performing assets as a percentage of gross advances"}
-  net_npa_ratio:       {unit: percent, search: "net NPA ratio net NPAs to net advances", keywords: ["net npa", "nnpa", "net non-performing"], hint: "net non-performing assets as a percentage of net advances"}
+  # ADDED (19 Nov 2026): `patterns`. WHY: "Which of Axis Bank and Kotak Mahindra Bank had the lower gross NPA ratio in
+  #      FY2024-25?" failed with "could not find a verifiable gross npa ratio for AXISBANK", although the notes print
+  #      "Gross non-performing advances to Gross Advances 1.33%". Every bank prints this RBI disclosure line in nearly
+  #      the same words, so the code now reads it directly with these patterns (the first percentage after the
+  #      label is the current year). The model is asked only when no pattern matches.
+  gross_npa_ratio:     {unit: percent, search: "gross NPA ratio gross NPAs to gross advances", keywords: ["gross npa", "gnpa", "gross non-performing"], hint: "gross non-performing assets as a percentage of gross advances", patterns: ['gross non[- ]performing (?:assets|advances)\s*\d?\s*to gross advances\s*\d?\s*:?\s*(\d{1,2}\.\d{1,2})\s*%', 'gross npas? to gross advances\s*\d?\s*:?\s*(?:\(%\)\s*)?(\d{1,2}\.\d{1,2})\s*%']}
+  net_npa_ratio:       {unit: percent, search: "net NPA ratio net NPAs to net advances", keywords: ["net npa", "nnpa", "net non-performing"], hint: "net non-performing assets as a percentage of net advances", patterns: ['net non[- ]performing (?:assets|advances)\s*\d?\s*to net advances\s*\d?\s*:?\s*(\d{1,2}\.\d{1,2})\s*%', 'net npas? to net advances\s*\d?\s*:?\s*(?:\(%\)\s*)?(\d{1,2}\.\d{1,2})\s*%']}
   casa_ratio:          {unit: percent, search: "CASA ratio CASA deposits per cent of total deposits", keywords: ["casa"], hint: "current and savings account (CASA) deposits as a percentage of total deposits; often worded as 'CASA deposits accounted for X per cent of total deposits'"}
   net_interest_margin: {unit: percent, search: "net interest margin NIM", keywords: ["net interest margin", "nim"], hint: "net interest income as a percentage of average interest-earning assets; take the figure the bank states"}
   crar:                {unit: percent, search: "capital adequacy ratio CRAR Basel III total capital", keywords: ["capital adequacy", "crar", "total capital ratio"], hint: "total capital adequacy ratio under Basel III (not Tier 1 or CET1 alone)"}
   return_on_assets:    {unit: percent, search: "return on assets ROA", keywords: ["return on assets", "return on average assets", "roa"], hint: "net profit as a percentage of average total assets, as the bank states it"}
   earnings_per_share:  {unit: currency_per_share, search: "basic earnings per share", keywords: ["earnings per", "eps"], hint: "basic earnings per equity share for the year, in rupees"}
+  # ADDED (19 Nov 2026): stated by banks in the asset-quality discussion; the inputs are not in the statements.
+  provision_coverage_ratio: {unit: percent, search: "provision coverage ratio PCR", keywords: ["provision coverage", "pcr"], hint: "provisions held against non-performing assets as a percentage of gross non-performing assets, as the bank states it; if two are given, take the one EXCLUDING technical write-offs"}

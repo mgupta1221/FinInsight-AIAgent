@@ -112,6 +112,14 @@ def gold_for(q: dict, meta: dict, inputs: list[dict]) -> dict:
     if kind.startswith("multi"):
         have = {i["key"]: i["value"] for i in inputs}
         formula = (meta.get("formula") or "").strip()
+        # NEW (20 Nov 2026): a multi-step question whose honest answer is "this does not apply".
+        # WHY: "What share of Infosys' total borrowings was due within one year?" has no percentage as its answer:
+        #      Infosys has no borrowings, and its report says so. The team could not fill a numerator and a
+        #      denominator. With the formula "not_applicable" on the Questions sheet, the gold answer is the
+        #      expectation that the agent says so; the filled row is the evidence (the page with the statement),
+        #      and the "notes" cell of the question is the reason.
+        if formula.lower() == "not_applicable":
+            return {**base, "expect": "not_applicable", "reason": str(meta.get("notes") or "").strip()}
         return {**base, "value": evaluate_expression(formula, have), "unit": "percent", "formula": formula}
     if kind == "yoy":
         cur = {i["key"].split(":")[-1] if ":" in i["key"] else name: i["value"] for i in inputs if i["key"].startswith("current")}
@@ -200,6 +208,15 @@ def run(workbook: Path = WORKBOOK, eval_set: Path = EVAL_SET, dry_run: bool = Fa
                 final.append(qid)
             continue
         rows = by_q.get(qid, [])
+        # NEW (20 Nov 2026): for a multi-step question, a row that the formula does not use and that nobody filled
+        # is ignored. WHY: every multi-step question starts with a "numerator" and a "denominator" row. When the
+        # report states the percentage itself (Dabur: "accounts for 26.5% of Consolidated Sales") the formula is
+        # just "numerator", and the empty "denominator" row kept the whole question pending. Deleting the row by
+        # hand worked but shifted the rows below it.
+        if q["type"].startswith("multi"):
+            formula = str(meta.get(qid, {}).get("formula") or "").lower()
+            used = [r for r in rows if str(r["key"]).lower() in formula or _num(r.get("value_author")) is not None]
+            rows = used or rows
         checked = [check_input(r) for r in rows]
         reasons = [why for _, why in checked if why]
         if not rows:

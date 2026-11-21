@@ -9,6 +9,13 @@
 # "Tech Mahindra". Nothing was removed; get_company_profile ignores the new key. Read by
 # src/finsight/tools/company_match.py.
 
+# ADDED (19 Nov 2026): `default_scope`. Which statements a question is about when it does not say
+# "standalone" or "consolidated". WHY: the evaluation set expects standalone figures for Hindustan Unilever, ITC,
+# Nestle India, Britannia and the five banks, and consolidated figures for the IT companies and Dabur. The agent
+# read every such question as consolidated, so it compared against the wrong statements. Banks default to
+# standalone in code (is_bank); the four FMCG companies carry the key below. Change it here if the team decides
+# otherwise; nothing else needs to change. Read by finsight.agent.planner.default_scope().
+
 defaults:
   fy_end: "03-31"
   reporting_units: crore
@@ -55,6 +62,7 @@ companies:
   # ---- FMCG (Ind AS Schedule III, Div II) ----
   - name: Hindustan Unilever
     ticker: HINDUNILVR
+    default_scope: standalone   # added 19 Nov 2026, see the note at the top of this file
     sector: fmcg
     is_bank: false
     is_nbfc: false
@@ -62,6 +70,7 @@ companies:
     aliases: ["hindustan unilever", "hul", "hindunilvr"]
   - name: ITC
     ticker: ITC
+    default_scope: standalone   # added 19 Nov 2026, see the note at the top of this file
     sector: fmcg
     is_bank: false
     is_nbfc: false
@@ -69,6 +78,7 @@ companies:
     aliases: ["itc"]
   - name: Nestlé India
     ticker: NESTLEIND
+    default_scope: standalone   # added 19 Nov 2026, see the note at the top of this file
     sector: fmcg
     is_bank: false
     is_nbfc: false
@@ -76,6 +86,7 @@ companies:
     aliases: ["nestle india", "nestlé india", "nestle", "nestlé"]
   - name: Britannia Industries
     ticker: BRITANNIA
+    default_scope: standalone   # added 19 Nov 2026, see the note at the top of this file
     sector: fmcg
     is_bank: false
     is_nbfc: false

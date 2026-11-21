@@ -122,3 +122,48 @@ def test_author_cannot_verify_their_own_figure_and_dry_run_changes_nothing(files
     result = compute_gold.run(book, evalset, dry_run=True, store_report=None)
     assert "same person" in result["pending"]["fact-001"][0] and result["final"] == ["summary-001"]
     assert evalset.read_text(encoding="utf-8") == before
+
+
+# ---- added 20 Nov 2026: two shapes of multi-step gold answer the team met while filling the workbook ----
+
+def _edit(book, formula=None, notes=None, drop_denominator=False, numerator=None):
+    wb = load_workbook(book)
+    qs, ins = wb["Questions"], wb["Inputs"]
+    hq, hi = [c.value for c in qs[1]], [c.value for c in ins[1]]
+    for r in qs.iter_rows(min_row=2):
+        if r[0].value == "multihop-004":
+            if formula: r[hq.index("formula")].value = formula
+            if notes: r[hq.index("notes")].value = notes
+    for r in ins.iter_rows(min_row=2):
+        if r[0].value == "multihop-004" and r[1].value == "denominator" and drop_denominator:
+            for name in ("unit", "value_author", "page_author", "author", "value_verifier", "page_verifier", "verifier"):
+                r[hi.index(name)].value = None
+        if r[0].value == "multihop-004" and r[1].value == "numerator" and numerator:
+            for name, v in numerator.items(): r[hi.index(name)].value = v
+    wb.save(book)
+
+
+def test_percentage_stated_by_the_report_needs_one_row_only(files):
+    book, evalset = files
+    fill(book)
+    _edit(book, formula="numerator", drop_denominator=True, numerator={"unit": "percent", "value_author": 26.5, "value_verifier": 26.5})
+    result = compute_gold.run(book, evalset, store_report=None)
+    assert "multihop-004" in result["final"] and gold(evalset)["multihop-004"]["gold"]["value"] == 26.5
+
+
+def test_not_applicable_is_a_gold_answer(files):
+    book, evalset = files
+    fill(book)
+    _edit(book, formula="not_applicable", notes="The company has no borrowings.", drop_denominator=True,
+          numerator={"unit": "none", "value_author": 0, "value_verifier": 0})
+    result = compute_gold.run(book, evalset, store_report=None)
+    g = gold(evalset)["multihop-004"]["gold"]
+    assert "multihop-004" in result["final"] and g["expect"] == "not_applicable" and g["reason"] == "The company has no borrowings."
+    assert "value" not in g and len(g["citations"]) == 1
+
+
+def test_an_unfilled_row_the_formula_needs_still_keeps_the_question_pending(files):
+    book, evalset = files
+    fill(book)
+    _edit(book, drop_denominator=True)                                  # formula still numerator / denominator * 100
+    assert "author has not filled" in compute_gold.run(book, evalset, store_report=None)["pending"]["multihop-004"][0]

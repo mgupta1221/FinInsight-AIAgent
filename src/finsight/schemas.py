@@ -157,6 +157,19 @@ class Extracted(BaseModel):
     citation: str = ""
 
 
+class RatioParts(BaseModel):
+    """NEW (19 Nov 2026). The numbers behind a "what share / what percentage" question, pointed at by the model in
+    retrieved text and verified in code afterwards (executor.text_ratio)."""
+
+    found: bool
+    stated_quote: str = Field("", description="the percentage exactly as printed, if the report states it itself")
+    numerator_label: str = ""
+    numerator_quote: str = Field("", description="the part, exactly as printed")
+    denominator_label: str = ""
+    denominator_quote: str = Field("", description="the whole, exactly as printed")
+    citation: str = ""
+
+
 class AgentAnswer(BaseModel):
     """The final answer object returned by finsight.agent.graph.run()."""
 

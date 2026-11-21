@@ -52,9 +52,26 @@ class QdrantStore:
             )
             logger.info("created Qdrant collection %s (dim=%d)", self.collection, dim)
 
+    # NEW (18 Nov 2026): used by the ingest so that a re-run replaces the index and does not double it.
+    def drop_collection(self) -> None:
+        if self.client.collection_exists(self.collection):
+            self.client.delete_collection(self.collection)
+            logger.info("removed Qdrant collection %s (it is rebuilt by this run)", self.collection)
+
+    def delete_where(self, flt: dict) -> None:
+        """Delete every point whose payload matches `flt`, e.g. {"ticker": "INFY"}."""
+        self.client.delete(collection_name=self.collection,
+                           points_selector=models.FilterSelector(filter=self._build_filter(flt)))
+
     def upsert(self, vectors: list[list[float]], payloads: list[dict]) -> int:
+        # CHANGED (18 Nov 2026): the point id is derived from the chunk id.
+        # OLD: models.PointStruct(id=str(uuid.uuid4()), vector=v, payload=p)
+        # WHY: a random id made every re-index ADD a second copy of each chunk. With an id computed from the
+        #      chunk's own id, indexing the same chunk again overwrites the first copy. Payloads without an
+        #      "id" (none in this project) still get a random one.
         points = [
-            models.PointStruct(id=str(uuid.uuid4()), vector=v, payload=p)
+            models.PointStruct(id=str(uuid.uuid5(uuid.NAMESPACE_URL, str(p["id"]))) if p.get("id") else str(uuid.uuid4()),
+                               vector=v, payload=p)
             for v, p in zip(vectors, payloads)
         ]
         self.client.upsert(collection_name=self.collection, points=points)

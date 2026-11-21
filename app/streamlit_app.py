@@ -41,6 +41,7 @@ from finsight.tools.get_company_profile import _load as load_companies  # noqa: 
 import uuid  # noqa: E402
 
 from components import render_agent_answer, answer_markdown  # noqa: E402  (app/components.py)
+import lookups  # noqa: E402  (app/lookups.py, 19 Nov 2026: the Quick lookup pickers)
 from finsight.agent.graph import run as run_agent  # noqa: E402
 from finsight.agent.memory import Memory  # noqa: E402
 from finsight.corpus import years_in  # noqa: E402
@@ -61,9 +62,48 @@ with st.sidebar:
         st.session_state.history = []
         st.session_state.session_id = uuid.uuid4().hex
     st.markdown("---")
+    # NEW (19 Nov 2026): Quick lookup. Pick a sector, companies, a figure or ratio and a year; the button writes
+    # the question and sends it to the agent exactly as if it had been typed (see app/lookups.py for why).
+    # The figure list follows the sector: banks get deposits, advances, CASA ratio, gross NPA ...; the other
+    # companies get revenue, net profit, operating margin ... One company = a lookup, two or more = a comparison.
+    st.header("Quick lookup")
+    profiles = list({p["ticker"]: p for p in index.values()}.values())
+    lk_sector = st.selectbox("Sector", lookups.sectors(profiles), key="lk_sector")
+    lk_pool = lookups.companies_in(profiles, lk_sector)
+    lk_is_bank = any(p.get("is_bank") for p in lk_pool)
+    lk_names = st.multiselect("Companies (two or more to compare)", [p["name"] for p in lk_pool],
+                              default=[lk_pool[0]["name"]], key=f"lk_companies_{lk_sector}")
+    lk_options = lookups.figure_options(lk_is_bank)
+    lk_pick = st.selectbox("Figure or ratio", lk_options, key=f"lk_figure_{lk_is_bank}",
+                           format_func=lambda o: f"{o[0]}  ({o[2]})")
+    # the change between the two years is offered only where the agent can give it: one company, a reported figure
+    lk_year_choices = ["2025-26", "2024-25"] + (["Change: 2024-25 to 2025-26"] if len(lk_names) == 1 and lk_pick[2] == "figure" else [])
+    lk_year = st.selectbox("Fiscal year", lk_year_choices, key=f"lk_year_{len(lk_year_choices)}")
+    # OLD: lk_scope = st.radio("Scope", ["Consolidated", "Standalone"], horizontal=True, key="lk_scope")
+    # NEW (19 Nov 2026, later): no Scope picker for the ratios a bank reports for the bank itself (see lookups.py).
+    if lookups.scope_is_fixed(lk_pick[1], lk_is_bank):
+        lk_scope = ""
+        st.caption("Scope: standalone. Banks state this ratio for the bank itself, not for the group.")
+    else:
+        # OLD: lk_scope = st.radio("Scope", ["Consolidated", "Standalone"], horizontal=True, key="lk_scope")
+        # NEW (19 Nov 2026): for banks "Standalone" comes first, the same default the agent now uses for a bank.
+        # OLD (earlier on 19 Nov):
+        # lk_scope = st.radio("Scope", ["Standalone", "Consolidated"] if lk_is_bank else ["Consolidated", "Standalone"],
+        #                     horizontal=True, key=f"lk_scope_{lk_is_bank}")
+        # NEW (19 Nov 2026, later): the first choice is the default scope of the companies picked (planner.default_scope).
+        from finsight.agent.planner import default_scope as _default_scope
+        lk_first = _default_scope([p["ticker"] for p in lk_pool if p["name"] in lk_names]).capitalize()
+        lk_scope = st.radio("Scope", [lk_first] + [x for x in ("Consolidated", "Standalone") if x != lk_first],
+                            horizontal=True, key=f"lk_scope_{lk_first}")
+    lk_order = st.radio("Rank by", ["highest", "lowest"], horizontal=True, key="lk_order") if len(lk_names) > 1 else "highest"
+    lk_go = st.button("Get answer", type="primary", disabled=not lk_names, key="lk_go")
+    st.markdown("---")
     st.header("Filters (optional)")
-    company = st.selectbox("Company", ["(any)"] + tickers, index=0)
-    fy = st.selectbox("Fiscal year", ["(any)", "2024-25", "2025-26"], index=0)
+    # OLD: company = st.selectbox("Company", ["(any)"] + tickers, index=0)
+    #      fy = st.selectbox("Fiscal year", ["(any)", "2024-25", "2025-26"], index=0)
+    # NEW (19 Nov 2026): the same two pickers, now with a key, because the sidebar has other pickers too.
+    company = st.selectbox("Company", ["(any)"] + tickers, index=0, key="filter_company")
+    fy = st.selectbox("Fiscal year", ["(any)", "2024-25", "2025-26"], index=0, key="filter_fy")
     top_k = st.slider("Passages to retrieve", 3, 10, 5)
     st.markdown("---")
     st.caption("Leave filters on **(any)** to let the search figure it out.")
@@ -108,7 +148,15 @@ for turn in st.session_state.history:
         else:
             st.markdown(turn["content"])
 
-question = st.chat_input("Ask about a company's annual report…")
+# OLD: question = st.chat_input("Ask about a company's annual report…")
+# NEW (19 Nov 2026): a question can also come from the Quick lookup button. It is written out in full (company,
+# figure, year), shown in the chat like a typed question, and answered the same way.
+typed = st.chat_input("Ask about a company's annual report…")
+from_lookup = None
+if lk_go and lk_names:
+    lk_years = ["2024-25", "2025-26"] if lk_year.startswith("Change") else [lk_year]
+    from_lookup = lookups.build_question(lk_names, lk_pick[0], lk_years, lk_scope, lk_order)
+question = typed or from_lookup
 if question:
     st.session_state.history.append({"role": "user", "content": question})
     with st.chat_message("user"):
@@ -129,7 +177,10 @@ if question:
             # NEW (15 Nov 2026): the agent path.
             with st.spinner("Working on it…"):
                 try:
-                    agent_answer = run_agent(with_filters(question), session_id=st.session_state.session_id)
+                    # OLD: agent_answer = run_agent(with_filters(question), session_id=st.session_state.session_id)
+                    # NEW (19 Nov 2026): a Quick lookup question is already complete, so the optional filters are not added to it.
+                    agent_answer = run_agent(question if from_lookup and not typed else with_filters(question),
+                                             session_id=st.session_state.session_id)
                 except Exception as e:  # noqa: BLE001  (endpoint down, wrong key, missing figure store ...)
                     agent_answer = None
                     reply = f"⚠️ Error: {e}"

@@ -10,6 +10,7 @@ is drawn lives in one place. `answer_markdown` has no Streamlit calls, so it is 
 from __future__ import annotations
 
 import json
+import re
 
 STATUS_LABEL = {
     "answered": "Answered",
@@ -31,11 +32,30 @@ def answer_markdown(a) -> str:
     return text
 
 
+# CHANGED (19 Nov 2026): the table now says WHICH REPORT each page number belongs to.
+# OLD:
+# def input_rows(a) -> list[dict]:
+#     """The figures an answer was built from, as table rows."""
+#     return [{"Figure": f.name, "Company": f.company, "Year": f"FY{f.fiscal_year}",
+#              "Value": f"{f.value:,.2f}" if f.value is not None else "", "Unit": f.unit or "",
+#              "Page": f.page, "Citation": f.citation or ""} for f in a.inputs]
+# WHY: in a year-on-year answer the previous year's figure is read from the previous-year column of the LATER
+#      report, so both years are on the same basis. The row for FY2024-25 then showed "Page 354", which a
+#      reader looks up in the FY2024-25 report and does not find: it is page 354 of the FY2025-26 report. The
+#      report was only visible inside the citation code (HDFCBANK-FY2526-p354). The column "Page" is replaced
+#      by "Read from", for example "FY2025-26 report, page 354".
+def read_from(f) -> str:
+    """ "FY2025-26 report, page 354" for a figure cited as HDFCBANK-FY2526-p354."""
+    m = re.search(r"-FY(\d\d)(\d\d)-p", f.citation or "")
+    report = f"FY20{m.group(1)}-{m.group(2)}" if m else f"FY{f.fiscal_year}"
+    return f"{report} report, page {f.page}" if f.page else ""
+
+
 def input_rows(a) -> list[dict]:
     """The figures an answer was built from, as table rows."""
     return [{"Figure": f.name, "Company": f.company, "Year": f"FY{f.fiscal_year}",
              "Value": f"{f.value:,.2f}" if f.value is not None else "", "Unit": f.unit or "",
-             "Page": f.page, "Citation": f.citation or ""} for f in a.inputs]
+             "Read from": read_from(f), "Citation": f.citation or ""} for f in a.inputs]
 
 
 def render_agent_answer(st, a) -> None:

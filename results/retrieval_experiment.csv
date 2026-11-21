@@ -1,0 +1,9 @@
+source,embedding,reranker,mode,company_year_filter,cases,recall@1,recall@3,recall@5,recall@10
+figure store (PROVISIONAL: pages not hand-checked),BAAI/bge-small-en-v1.5,cross-encoder/ms-marco-MiniLM-L-6-v2,bm25,yes,72,0.014,0.028,0.028,0.042
+figure store (PROVISIONAL: pages not hand-checked),BAAI/bge-small-en-v1.5,cross-encoder/ms-marco-MiniLM-L-6-v2,bm25,no,72,0.0,0.0,0.0,0.014
+figure store (PROVISIONAL: pages not hand-checked),BAAI/bge-small-en-v1.5,cross-encoder/ms-marco-MiniLM-L-6-v2,dense,yes,72,0.069,0.167,0.222,0.347
+figure store (PROVISIONAL: pages not hand-checked),BAAI/bge-small-en-v1.5,cross-encoder/ms-marco-MiniLM-L-6-v2,dense,no,72,0.014,0.083,0.125,0.222
+figure store (PROVISIONAL: pages not hand-checked),BAAI/bge-small-en-v1.5,cross-encoder/ms-marco-MiniLM-L-6-v2,hybrid,yes,72,0.042,0.111,0.181,0.264
+figure store (PROVISIONAL: pages not hand-checked),BAAI/bge-small-en-v1.5,cross-encoder/ms-marco-MiniLM-L-6-v2,hybrid,no,72,0.014,0.042,0.069,0.125
+figure store (PROVISIONAL: pages not hand-checked),BAAI/bge-small-en-v1.5,cross-encoder/ms-marco-MiniLM-L-6-v2,hybrid+rerank,yes,72,0.042,0.083,0.153,0.292
+figure store (PROVISIONAL: pages not hand-checked),BAAI/bge-small-en-v1.5,cross-encoder/ms-marco-MiniLM-L-6-v2,hybrid+rerank,no,72,0.014,0.069,0.125,0.181

@@ -75,13 +75,15 @@ def fake_search(monkeypatch):
     monkeypatch.setattr(ex, "search_report", search)
 
 
-def model(plan=None, draft=None, extracted=None, summary=None, tokens_per_call=300):
+def model(plan=None, draft=None, extracted=None, summary=None, tokens_per_call=300, parts=None):   # parts: 19 Nov 2026
     """A scripted model. By default it returns an EMPTY plan, so the code backstop must find every slot."""
     def responder(schema, system, user):
         if schema == "AgentPlan":
             return plan or {"intent": "other"}
         if schema == "Draft":
             return draft or {"answer": user.replace("Facts: ", "")}
+        if schema == "RatioParts":
+            return parts or {"found": False}
         if schema == "Extracted":
             return extracted or {"found": False}
         return summary or {"answer": "", "key_points": []}

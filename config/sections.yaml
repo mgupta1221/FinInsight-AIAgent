@@ -2,10 +2,65 @@
 # One ingested section = one "document" for retrieval. Everything else in the PDF is skipped
 # to keep the index focused (financial statements, notes, MD&A, risk, key ratios, + bank Basel III).
 
+# CHANGED (18 Nov 2026): the section list was rewritten. The previous list is kept as comments below it.
+# WHY: labels were wrong for most narrative pages. A pattern was matched ANYWHERE in a page's text and the
+#      label then stuck to every following page, so one mention of "risk management" labelled the CEO's
+#      statement "risk" (10,568 of 27,696 chunks were "risk"), and pages before the first match were not
+#      indexed at all. Now (see ingest/sections.py):
+#        * a pattern must be a HEADING: a short line near the top of the page that starts with it, or mostly is it;
+#        * more narrative sections are recognised (overview, directors_report, governance, brsr, auditor);
+#        * the three statements are labelled from the figure extractor's page list, not from text patterns;
+#        * `one_page: true` labels only the page it is on; `max_pages: N` ends a section after N pages with no
+#          heading of its own; `not_in_financials: true` is ignored inside the financial statements and notes
+#          (a note headed "Financial risk management" is still a note).
+#      Order matters: when a heading fits two sections, the first one listed wins.
 ingest_sections:
+  - key: mdna
+    title: Management Discussion and Analysis
+    patterns: ["management discussion and analysis", "management discussion & analysis", "management's discussion", "md&a"]
+    not_in_financials: true
+  - key: risk
+    title: Risk Management
+    patterns: ["risk management", "principal risks", "risk factors", "risks and opportunities", "our risks", "enterprise risk", "key risks"]
+    not_in_financials: true
+    max_pages: 12
+  - key: governance
+    title: Corporate Governance Report
+    patterns: ["corporate governance report", "report on corporate governance", "corporate governance"]
+  - key: brsr
+    title: Business Responsibility and Sustainability Report
+    patterns: ["business responsibility and sustainability", "business responsibility & sustainability", "business responsibility report"]
+  - key: directors_report
+    title: Board's / Directors' Report
+    patterns: ["board's report", "boards' report", "directors' report", "report of the board of directors", "report of the directors"]
+  - key: auditor
+    title: Independent Auditor's Report
+    patterns: ["independent auditor's report", "independent auditors' report", "auditor's report", "auditors' report"]
+  - key: notes
+    title: Notes to the Financial Statements
+    patterns: ["notes to the financial statements", "notes to financial statements", "notes to the standalone", "notes to the consolidated",
+               "notes to standalone", "notes to consolidated", "notes forming part", "notes to the accounts", "notes to accounts",
+               "schedules forming part", "schedules to the", "significant accounting policies"]
+  - key: highlights
+    title: Financial Highlights / Key Ratios
+    patterns: ["financial highlights", "key ratios", "ten year", "performance highlights", "key performance indicators", "year at a glance"]
+    not_in_financials: true
+    one_page: true
+  - key: basel
+    title: Basel III / Pillar 3 Disclosures
+    patterns: ["basel iii", "pillar 3", "pillar iii"]
+    banks_only: true
+  - key: overview
+    title: Company overview, chairman's and CEO's statements, strategy
+    patterns: ["chairman's statement", "chairman's message", "chairman's letter", "letter to shareholders", "letter to the shareholders",
+               "message from", "ceo's statement", "ceo & md's statement", "md & ceo's", "managing director's", "about the report",
+               "about this report", "our strategy", "strategic priorities", "business model", "who we are", "our purpose"]
+    not_in_financials: true
+    default: true              # pages before the first heading are part of the overview (they used to be dropped)
+  # ---- the three primary statements: labelled from ingest/statements.py; these patterns are only the fallback ----
   - key: pnl
     title: Statement of Profit and Loss
-    patterns: ["statement of profit and loss", "profit and loss account", "profit & loss"]
+    patterns: ["statement of profit and loss", "statements of profit and loss", "profit and loss account"]
     is_primary_statement: true
   - key: balance_sheet
     title: Balance Sheet
@@ -13,30 +68,45 @@ ingest_sections:
     is_primary_statement: true
   - key: cash_flow
     title: Cash Flow Statement
-    patterns: ["cash flow statement", "statement of cash flows"]
+    patterns: ["cash flow statement", "statement of cash flows", "statements of cash flows"]
     is_primary_statement: true
-  - key: notes
-    title: Notes to the Financial Statements
-    patterns: ["notes to the financial statements", "notes to the accounts", "notes forming part"]
-    is_primary_statement: false
-  - key: mdna
-    title: Management Discussion and Analysis
-    patterns: ["management discussion and analysis", "management discussion & analysis", "md&a"]
-    is_primary_statement: false
-  - key: risk
-    title: Risk Management
-    patterns: ["risk management", "principal risks", "risk factors"]
-    is_primary_statement: false
-  - key: highlights
-    title: Financial Highlights / Key Ratios
-    patterns: ["financial highlights", "key ratios", "ten year", "performance highlights"]
-    is_primary_statement: false
-  # ---- banks only ----
-  - key: basel
-    title: Basel III / Pillar 3 Disclosures
-    patterns: ["basel iii", "pillar 3", "pillar iii"]
-    is_primary_statement: false
-    banks_only: true
+
+# ---- PREVIOUS LIST (kept for reference, replaced 18 Nov 2026) ----
+# ingest_sections:
+#   - key: pnl
+#     title: Statement of Profit and Loss
+#     patterns: ["statement of profit and loss", "profit and loss account", "profit & loss"]
+#     is_primary_statement: true
+#   - key: balance_sheet
+#     title: Balance Sheet
+#     patterns: ["balance sheet"]
+#     is_primary_statement: true
+#   - key: cash_flow
+#     title: Cash Flow Statement
+#     patterns: ["cash flow statement", "statement of cash flows"]
+#     is_primary_statement: true
+#   - key: notes
+#     title: Notes to the Financial Statements
+#     patterns: ["notes to the financial statements", "notes to the accounts", "notes forming part"]
+#     is_primary_statement: false
+#   - key: mdna
+#     title: Management Discussion and Analysis
+#     patterns: ["management discussion and analysis", "management discussion & analysis", "md&a"]
+#     is_primary_statement: false
+#   - key: risk
+#     title: Risk Management
+#     patterns: ["risk management", "principal risks", "risk factors"]
+#     is_primary_statement: false
+#   - key: highlights
+#     title: Financial Highlights / Key Ratios
+#     patterns: ["financial highlights", "key ratios", "ten year", "performance highlights"]
+#     is_primary_statement: false
+#   # ---- banks only ----
+#   - key: basel
+#     title: Basel III / Pillar 3 Disclosures
+#     patterns: ["basel iii", "pillar 3", "pillar iii"]
+#     is_primary_statement: false
+#     banks_only: true
 
 # Scopes to capture separately (figures differ).
 scopes: [consolidated, standalone]

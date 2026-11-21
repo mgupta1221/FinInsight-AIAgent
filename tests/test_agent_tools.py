@@ -45,6 +45,8 @@ def test_fiscal_year_helpers():
     assert years_in("and for 25-26") == ["2025-26"] and years_in("FY24-25 vs 2025-2026") == ["2024-25", "2025-26"]
     assert years_in("2024/25") == ["2024-25"] and years_in("FY2025-26 and FY 2025") == ["2025-26", "2024-25"]
     assert years_in("see pages 24-30 and note 12-14") == [] and years_in("revenue in 2025-27") == []
+    # added 18 Nov 2026: a slip of the finger on the separator
+    assert years_in("FY2024=25") == ["2024-25"] and years_in("fy 2025_26") == ["2025-26"] and years_in("24=25") == ["2024-25"]
 
 
 def test_every_formula_input_can_be_fetched_or_derived():

@@ -8,6 +8,7 @@ question went wrong.
     python scripts/ask.py "And for FY2024-25?" --session demo        (follow-up in the same session)
     python scripts/ask.py "..." --trace
     python scripts/ask.py --reset --session demo                     (forget the session)
+    python scripts/ask.py "..." --verbose                            (show model-loading bars and library notices)
 """
 import argparse
 import json
@@ -17,6 +18,36 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "src"), str(ROOT)]      # works with or without `pip install -e .`
 
+# NEW (18 Nov 2026): keep the output to the answer. Use --verbose to see everything again.
+# WHY: with the real embedding and reranker models installed, every run printed two "Loading weights" progress
+#      bars and a Hugging Face notice before the answer. They are harmless but bury the answer. The settings
+#      below must be made BEFORE the libraries are imported, which is why this block sits above the imports.
+if "--verbose" not in sys.argv:
+    import logging
+    import os
+    import warnings
+    os.environ.setdefault("TQDM_DISABLE", "1")                      # all progress bars (model loading, batches)
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+    warnings.filterwarnings("ignore", category=FutureWarning)
+    warnings.filterwarnings("ignore", category=UserWarning, module=r"(huggingface_hub|qdrant_client|transformers|sentence_transformers).*")
+    for noisy in ("huggingface_hub", "sentence_transformers", "transformers", "httpx", "httpx2"):
+        logging.getLogger(noisy).setLevel(logging.ERROR)
+    # ADDED later on 18 Nov 2026: once both models are saved on this computer, do not contact Hugging Face at all.
+    # WHY: the notice "You are sending unauthenticated requests to the HF Hub" still appeared; it is printed when
+    #      the library checks online whether the model has changed. With the models already downloaded, that check
+    #      is not needed, and skipping it also makes each start quicker. A model that is not downloaded yet is
+    #      still fetched normally.
+    try:
+        from finsight.config import settings as _settings
+        _hub = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
+        if all((_hub / ("models--" + name.replace("/", "--"))).exists() for name in (_settings.embedding_model, _settings.reranker_model)):
+            os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    except Exception:  # noqa: BLE001  never let this convenience stop a question
+        pass
+
 from finsight.agent.graph import run            # noqa: E402
 from finsight.agent.memory import Memory        # noqa: E402
 
@@ -25,6 +56,7 @@ ap.add_argument("question", nargs="?")
 ap.add_argument("--session", default="cli")
 ap.add_argument("--trace", action="store_true")
 ap.add_argument("--reset", action="store_true")
+ap.add_argument("--verbose", action="store_true", help="show model-loading bars and library notices")   # 18 Nov 2026
 a = ap.parse_args()
 if a.reset:
     Memory().clear(a.session)

@@ -72,8 +72,13 @@ def normalise_fy(text: str) -> str | None:
 #      year in memory, which is a wrong answer whenever the remembered year differs from the one typed.
 #      A two-digit pair counts only when the second number follows the first ("24-25"), so page ranges such
 #      as "24-30" are not taken for a year.
-_FY = re.compile(r"\b(?:fy\s?)?(20\d\d)\s?[-–/]\s?(?:20)?(\d\d)\b|\bfy\s?(20\d\d|\d\d)\b(?!\s?[-–/]\s?\d)|"
-                 r"\b(?:fy\s?)?(\d\d)\s?[-–/]\s?(\d\d)\b", re.I)
+# CHANGED again (18 Nov 2026): "=", "_" and ":" are accepted between the two parts of a year.
+# OLD (15 Nov): the separator class was [-–/] in all three places.
+# WHY: "FY2024=25" (the "=" key is next to "-") was read as "FY2024" alone, i.e. FY2023-24, and refused as
+#      "not in my corpus", although the intended year is obvious.
+_SEP = r"[-–/=_:]"
+_FY = re.compile(rf"\b(?:fy\s?)?(20\d\d)\s?{_SEP}\s?(?:20)?(\d\d)\b|\bfy\s?(20\d\d|\d\d)\b(?!\s?{_SEP}\s?\d)|"
+                 rf"\b(?:fy\s?)?(\d\d)\s?{_SEP}\s?(\d\d)\b", re.I)
 
 
 def years_in(text: str) -> list[str]:
@@ -96,3 +101,18 @@ def citation(ticker: str, report_fy: str, page: int) -> str:
     """INFY, "2025-26", 214 -> "INFY-FY2526-p214" (the SPEC section 7 format; same as the existing tools)."""
     yy = report_fy.replace("FY", "").replace("-", "")[2:]
     return f"{ticker}-FY{yy}-p{page}"
+
+
+# NEW (19 Nov 2026): repair digits that one report prints with a private font.
+# WHY: in the TCS FY2024-25 PDF the text layer stores many digits as letters of another alphabet: "134.19" is
+#      stored as "13\u03f0.19", "152" as "1\u03f12". On screen it looks right; in the extracted text it does not.
+#      So "Which had the higher basic EPS in FY2024-25, Infosys or TCS?" failed: the EPS the model pointed at
+#      (134.19) was "not printed" on the page as far as the code could see. The ten code points U+03EC..U+03F5
+#      stand for 0..9 in that font, and a few punctuation marks are mapped the same way.
+_GLYPHS = {0x3EC + d: str(d) for d in range(10)}
+_GLYPHS.update({0x439: "%", 0x358: ".", 0x357: ":", 0x380: "(", 0x381: ")", 0x36C: "/", 0xF24: "\u20b9"})
+
+
+def fix_glyphs(text: str) -> str:
+    """Text with the private-font digits of the TCS FY2024-25 report turned back into 0-9. Other text is unchanged."""
+    return text.translate(_GLYPHS) if text else text
