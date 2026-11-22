@@ -8,6 +8,8 @@
 
     python eval/run_eval.py                      practice run of the agent      -> results/runs/<time>_agent/
     python eval/run_eval.py --mode simple        practice run of simple search  -> results/runs/<time>_simple/
+    python eval/run_eval.py --mode closed_book   the model WITHOUT the reports; also few_shot, cot_sc, decompose
+                                                 (added 22 Nov 2026, see eval/baselines.py)
     python eval/run_eval.py --official           OFFICIAL run (all questions)   -> results/official/<time>_agent/
     python eval/run_eval.py --limit 10           the first 10 questions only
     python eval/run_eval.py --types summary,refuse      only these question types
@@ -157,13 +159,19 @@ def run(mode: str = "agent", official: bool = False, limit: int | None = None, i
     if official and not_final:
         raise SystemExit(f"{len(not_final)} question(s) have no final gold answer yet ({', '.join(not_final[:5])} ...). Run eval/compute_gold.py first.")
     chosen = [q for q in questions if (not ids or q["id"] in ids) and (not types or q["type"] in types)][: limit or None]
-    ask = ask or (ask_simple if mode == "simple" else ask_agent)
+    # OLD: ask = ask or (ask_simple if mode == "simple" else ask_agent)
+    # CHANGED (22 Nov 2026): four more modes, the baselines without the reports (eval/baselines.py).
+    import baselines
+    by_mode = {"agent": ask_agent, "simple": ask_simple, **baselines.ASK}
+    given = ask
+    ask = ask or by_mode[mode]
 
     if resume:
         out = Path(resume)
         info = json.loads((out / "run_info.json").read_text(encoding="utf-8"))
         mode, official = info["mode"], info["official"]
-        ask = ask_simple if mode == "simple" and ask is ask_agent else ask
+        # OLD: ask = ask_simple if mode == "simple" and ask is ask_agent else ask
+        ask = given or by_mode[mode]                         # the mode of the run that is continued decides
     else:
         stamp = dt.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         base = (official_dir if official else practice_dir) / f"{stamp}_{mode}{'_' + label if label else ''}"
@@ -207,7 +215,9 @@ def run(mode: str = "agent", official: bool = False, limit: int | None = None, i
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Run the evaluation set through the agent (or simple search) and score it.")
-    ap.add_argument("--mode", choices=["agent", "simple"], default="agent")
+    # OLD: ap.add_argument("--mode", choices=["agent", "simple"], default="agent")
+    ap.add_argument("--mode", choices=["agent", "simple", "closed_book", "few_shot", "cot_sc", "decompose"], default="agent",
+                    help="agent; simple = search once and answer; the other four answer WITHOUT the reports (eval/baselines.py)")
     ap.add_argument("--official", action="store_true", help="save to results/official/ (all questions, frozen code)")
     ap.add_argument("--limit", type=int, help="only the first N questions (practice)")
     ap.add_argument("--ids", help="comma-separated question ids (practice)")

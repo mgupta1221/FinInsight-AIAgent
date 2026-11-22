@@ -132,6 +132,25 @@ see "Status of sections 1 to 3" at the end. Numbers are from practice runs and a
 - Choice: an exported note is a DRAFT with a warning until a person ticks "checked" and clicks Approve; only
   verified answers can be exported (SPEC section 8).
 
+### 13. Tracing: a trace with every answer, kept in files; Langfuse is not used (added 22 Nov 2026)
+
+- Options: send every run to Langfuse (a separate tracing service with its own database and web screen);
+  keep the trace with the answer and write it to files.
+- What is built:
+  - Every answer carries its own trace: what the guard decided, the slots the model proposed, the plan, each
+    step with its arguments and result, and each check of the critic with its reasons (`AgentAnswer.trace`).
+  - The app shows it under "How I got this" and stores it with the conversation in `store/memory.sqlite`.
+  - Every evaluation run writes `traces.jsonl` beside its results, one line per question, with personal
+    details masked.
+- Langfuse: the settings exist in `config.py` and `.env.example`, and `docker-compose.yml` can start the
+  service, but no code sends anything to it. With the keys left empty nothing changes.
+- Choice: files. Why: the trace is needed in two places, beside the answer on the screen and beside the score in
+  an evaluation run, and both are covered without another service to install, start and keep running on every
+  member's laptop. A file is also easy to hand in with the results.
+- What Langfuse would add: a web screen to browse and search runs, and timing per model call. Useful for a
+  system in production; not needed to answer "how was this answer produced" for 90 questions.
+- To do: confirm with the mentor that file traces meet the tracing requirement.
+
 ### Status of sections 1 to 3
 
 | Decision | In use now | Evidence | Status |
