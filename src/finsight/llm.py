@@ -58,6 +58,19 @@ class _RateLimiter:
             self._times.append(time.monotonic())
 
 
+# ADDED (agent layer, 13 Nov 2026) ------------------------------------------------------------------
+# WHY: the SPEC sets a budget of 12,000 tokens per question (settings.token_budget) and the evaluation
+#      must report tokens and cost per question, but nothing counted tokens. Every call now adds its
+#      usage to TOKENS_USED; the agent reads the difference before and after a question.
+TOKENS_USED = 0
+
+
+def _add_usage(completion) -> None:
+    global TOKENS_USED
+    usage = getattr(completion, "usage", None)
+    TOKENS_USED += int(getattr(usage, "total_tokens", 0) or 0)
+# ---------------------------------------------------------------------------------------------------
+
 _rate = _RateLimiter(settings.rate_limit_per_min)
 _concurrency = threading.Semaphore(settings.max_concurrency)
 
@@ -125,6 +138,7 @@ def chat(messages: list[dict], max_tokens: int | None = None, temperature: float
         )
 
     resp = _with_retries(_call)
+    _add_usage(resp)  # ADDED (agent layer): count this call's tokens (see TOKENS_USED above)
     return _strip_think(resp.choices[0].message.content or "")
 
 
@@ -133,8 +147,25 @@ def structured(messages: list[dict], schema, max_tokens: int | None = None, max_
     _, sclient = _clients()
     cap = min(max_tokens or settings.max_output_tokens, settings.max_output_tokens)
 
+    # CHANGED (agent layer, 13 Nov 2026) -------------------------------------------------------------
+    # OLD:
+    #     def _call():
+    #         return sclient.chat.completions.create(
+    #             model=settings.model_name,
+    #             messages=messages,
+    #             response_model=schema,
+    #             max_tokens=cap,
+    #             temperature=0.0,
+    #             max_retries=max_retries,
+    #             extra_body=_extra_body(),
+    #         )
+    #
+    #     return _with_retries(_call)
+    # WHY: `create` returns only the validated object, so the token usage of the call was lost.
+    #      instructor's `create_with_completion` returns the same object PLUS the raw completion, whose
+    #      `usage` is added to TOKENS_USED. The returned value is the same as before.
     def _call():
-        return sclient.chat.completions.create(
+        return sclient.chat.completions.create_with_completion(
             model=settings.model_name,
             messages=messages,
             response_model=schema,
@@ -144,4 +175,7 @@ def structured(messages: list[dict], schema, max_tokens: int | None = None, max_
             extra_body=_extra_body(),
         )
 
-    return _with_retries(_call)
+    obj, completion = _with_retries(_call)
+    _add_usage(completion)
+    return obj
+    # ---------------------------------------------------------------------------------------------------

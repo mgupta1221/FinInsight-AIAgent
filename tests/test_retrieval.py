@@ -8,7 +8,16 @@ import pytest
 
 from finsight.retrieval.filters import build_filter
 from finsight.retrieval.hybrid import rrf_fuse
-from finsight.retrieval.qdrant_store import QdrantStore
+# OLD (kept):
+# from finsight.retrieval.qdrant_store import QdrantStore
+# NEW (14 Nov 2026): skip this file when qdrant-client cannot be loaded.
+# WHY: on laptops with Windows Application Control the grpc DLL used by qdrant-client is blocked. The
+#      import error stopped the WHOLE test run ("Interrupted: 1 error during collection"). Now only these
+#      Qdrant tests are skipped there; on a normal Python 3.11 setup they run exactly as before.
+try:
+    from finsight.retrieval.qdrant_store import QdrantStore
+except Exception as _e:  # noqa: BLE001
+    pytest.skip(f"qdrant-client could not be loaded: {str(_e)[:80]}", allow_module_level=True)
 from finsight.retrieval.dense import dense_search
 
 

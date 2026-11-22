@@ -33,7 +33,10 @@ from ingest.embed_index import index_chunks, write_chunk_corpus
 from ingest.parse import parse_pdf
 from ingest.quality_gate import check_report
 from ingest.sections import assign_sections, keep_keys
-from ingest.tables import extract_statement_lines
+from ingest.tables import extract_statement_lines  # noqa: F401  (kept; no longer called, see below)
+# ADDED (agent layer, 13 Nov 2026): position-based statement extractor. See the header of
+# ingest/statements.py for why ingest/tables.py could not be used (it stored no headline figures).
+from ingest.statements import extract_statement_rows
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("ingest")
@@ -58,8 +61,12 @@ def _companies():
     return out
 
 
+# CHANGED (agent layer, 13 Nov 2026): added the keyword argument `figures_only` (default False, so
+# existing callers behave as before).
+# OLD: def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | None,
+#              skip_quality_gate: bool = False) -> None:
 def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | None,
-        skip_quality_gate: bool = False) -> None:
+        skip_quality_gate: bool = False, figures_only: bool = False) -> None:
     all_rows: list[dict] = []
     all_chunks: list[dict] = []
     keep = keep_keys()
@@ -87,7 +94,9 @@ def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | 
                                  "(use --no-quality-gate to override)", prof["ticker"], fy, missing)
                     continue
 
-            pages = assign_sections(pages, is_bank=prof.get("is_bank", False))
+            # OLD (kept): pages = assign_sections(pages, is_bank=prof.get("is_bank", False))
+            # MOVED (18 Nov 2026) to after the figure extraction below, because the section labels now use the
+            # list of statement pages the extractor finds (see ingest/sections.py).
             meta = {
                 "company": prof["name"],
                 "ticker": prof["ticker"],
@@ -96,23 +105,77 @@ def run(only: str | None, use_docling: bool, do_index: bool, limit_pages: int | 
                 "unit": prof.get("reporting_units", "crore"),
                 "pdf": pdf.name,
             }
-            all_rows.extend(extract_statement_lines(pages, meta))
+            # CHANGED (agent layer, 13 Nov 2026) ---------------------------------------------------------
+            # OLD: all_rows.extend(extract_statement_lines(pages, meta))
+            # WHY: extract_statement_lines (ingest/tables.py) matched "label number number" on one text
+            #      line. PyMuPDF puts each table cell on its own line, so no real statement row matched and
+            #      the figure store held only date fragments ("march = 31"). It also labelled every row
+            #      consolidated and crore. The new extractor reads the PDF by word position, takes the
+            #      scope from the page title and the unit from the page, and keeps the prior-year column.
+            rows, found = extract_statement_rows(pdf, meta)
+            all_rows.extend(rows)
+            logger.info("  %s FY%s: %d statement rows from %d pages; units %s", prof["ticker"], fy, len(rows),
+                        len(found), sorted({p["unit"] or "not printed" for p in found}))
+            # ADDED: --figures-only builds just the figure store (about 2 minutes for 30 reports) and
+            #        skips chunking + embedding, which are slow. Useful after changing the extractor.
+            if figures_only:
+                continue
+            # ---------------------------------------------------------------------------------------------
+            # NEW (18 Nov 2026): label the pages with the statement pages just found (page -> statement, scope).
+            statement_pages = {p["page"]: (p["statement"], p["scope"]) for p in found}
+            pages = assign_sections(pages, is_bank=prof.get("is_bank", False), statement_pages=statement_pages)
             all_chunks.extend(chunk_pages(pages, meta, keep_sections=keep))
 
     # write figure store
     if all_rows:
         settings.store_dir.mkdir(parents=True, exist_ok=True)
         df = pd.DataFrame(all_rows)
-        df.to_parquet(settings.store_dir / "statement_lines.parquet", index=False)
+        # NEW (18 Nov 2026): with --only, keep the other companies' rows that are already in the store.
+        # WHY: "--only INFY" used to write a store containing Infosys alone, silently removing the other 14.
+        old_csv = settings.store_dir / "statement_lines.csv"
+        if only and old_csv.exists():
+            old = pd.read_csv(old_csv, dtype={"fiscal_year": str, "report_fy": str})
+            df = pd.concat([old[old["ticker"].str.upper() != only.upper()], df], ignore_index=True)
+        # OLD (kept):
+        # df.to_parquet(settings.store_dir / "statement_lines.parquet", index=False)
+        # NEW (14 Nov 2026): always write a CSV copy, and do not stop if parquet cannot be written.
+        # WHY: parquet needs pyarrow, which Windows Application Control blocks on some laptops.
+        # get_financial_item reads the CSV when parquet is not usable.
+        df.to_csv(settings.store_dir / "statement_lines.csv", index=False)
+        try:
+            df.to_parquet(settings.store_dir / "statement_lines.parquet", index=False)
+        except Exception as e:  # noqa: BLE001
+            print(f"parquet not written ({type(e).__name__}); using statement_lines.csv")
         logger.info("wrote %d statement-line rows", len(df))
     else:
         logger.warning("no statement-line rows extracted")
 
+    # ADDED (agent layer): with --figures-only the chunk corpus and the index are left untouched.
+    if figures_only:
+        return
     # write chunk corpus (for BM25) and index (for dense search)
-    write_chunk_corpus(all_chunks)
-    logger.info("wrote %d chunks", len(all_chunks))
+    # CHANGED (18 Nov 2026). OLD:
+    #     write_chunk_corpus(all_chunks)
+    #     logger.info("wrote %d chunks", len(all_chunks))
+    #     if do_index:
+    #         n = index_chunks(all_chunks)
+    # WHY: (1) every run ADDED its vectors to the index under new random ids, so a second run stored every chunk
+    #          twice (and mixed vectors from two embedding models). A full run now empties the collection first;
+    #          a "--only TICKER" run removes just that company's vectors first.
+    #      (2) "--only TICKER" overwrote chunks.jsonl with that one company, so keyword search lost the other 14.
+    #          The other companies' chunks are now kept.
+    corpus = all_chunks
+    if only:
+        old_path = settings.data_dir / "parsed" / "chunks.jsonl"
+        if old_path.exists():
+            import json
+            kept = [c for c in (json.loads(line) for line in open(old_path, encoding="utf-8") if line.strip())
+                    if str(c.get("ticker", "")).upper() != only.upper()]
+            corpus = kept + all_chunks
+    write_chunk_corpus(corpus)
+    logger.info("wrote %d chunks", len(corpus))
     if do_index:
-        n = index_chunks(all_chunks)
+        n = index_chunks(all_chunks, replace="all" if not only else only.upper())
         logger.info("indexed %d vectors into Qdrant", n)
 
 
@@ -124,8 +187,12 @@ def main() -> int:
     ap.add_argument("--limit-pages", type=int, help="only first N pages per report (smoke test)")
     ap.add_argument("--no-quality-gate", action="store_true",
                     help="ingest even reports that fail the completeness check")
+    # ADDED (agent layer, 13 Nov 2026)
+    ap.add_argument("--figures-only", action="store_true",
+                    help="build only store/statement_lines.parquet (skip chunking and indexing)")
     args = ap.parse_args()
-    run(args.only, args.docling, not args.no_index, args.limit_pages, args.no_quality_gate)
+    # OLD: run(args.only, args.docling, not args.no_index, args.limit_pages, args.no_quality_gate)
+    run(args.only, args.docling, not args.no_index, args.limit_pages, args.no_quality_gate, args.figures_only)
     return 0
 
 

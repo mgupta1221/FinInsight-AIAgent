@@ -3,6 +3,19 @@
 # reporting_units: the unit figures are stated in ("crore" unless noted).
 # pdf_prefix: how the report files are named in data/manual-collection/ (e.g. "Infosys-Annual-Report-2024-25.pdf").
 
+# ADDED (agent layer, 13 Nov 2026): each company now also has an `aliases` list.
+# WHY: the agent must recognise a company inside a free-text question ("Which of SBI, ICICI Bank and HDFC Bank ...").
+# The existing keys (name, ticker, pdf_prefix) do not cover everyday names such as "Axis Bank", "Kotak" or
+# "Tech Mahindra". Nothing was removed; get_company_profile ignores the new key. Read by
+# src/finsight/tools/company_match.py.
+
+# ADDED (19 Nov 2026): `default_scope`. Which statements a question is about when it does not say
+# "standalone" or "consolidated". WHY: the evaluation set expects standalone figures for Hindustan Unilever, ITC,
+# Nestle India, Britannia and the five banks, and consolidated figures for the IT companies and Dabur. The agent
+# read every such question as consolidated, so it compared against the wrong statements. Banks default to
+# standalone in code (is_bank); the four FMCG companies carry the key below. Change it here if the team decides
+# otherwise; nothing else needs to change. Read by finsight.agent.planner.default_scope().
+
 defaults:
   fy_end: "03-31"
   reporting_units: crore
@@ -16,62 +29,76 @@ companies:
     is_bank: false
     is_nbfc: false
     pdf_prefix: TCS
+    aliases: ["tcs", "tata consultancy services", "tata consultancy"]
   - name: Infosys
     ticker: INFY
     sector: it_services
     is_bank: false
     is_nbfc: false
     pdf_prefix: Infosys
+    aliases: ["infosys", "infy"]
   - name: HCLTech
     ticker: HCLTECH
     sector: it_services
     is_bank: false
     is_nbfc: false
     pdf_prefix: HCL
+    aliases: ["hcltech", "hcl tech", "hcl technologies", "hcl"]
   - name: Wipro
     ticker: WIPRO
     sector: it_services
     is_bank: false
     is_nbfc: false
     pdf_prefix: Wipro
+    aliases: ["wipro"]
   - name: Tech Mahindra
     ticker: TECHM
     sector: it_services
     is_bank: false
     is_nbfc: false
     pdf_prefix: TechMahindra
+    aliases: ["tech mahindra", "techm", "techmahindra"]
 
   # ---- FMCG (Ind AS Schedule III, Div II) ----
   - name: Hindustan Unilever
     ticker: HINDUNILVR
+    default_scope: standalone   # added 19 Nov 2026, see the note at the top of this file
     sector: fmcg
     is_bank: false
     is_nbfc: false
     pdf_prefix: HUL
+    aliases: ["hindustan unilever", "hul", "hindunilvr"]
   - name: ITC
     ticker: ITC
+    default_scope: standalone   # added 19 Nov 2026, see the note at the top of this file
     sector: fmcg
     is_bank: false
     is_nbfc: false
     pdf_prefix: ITC
+    aliases: ["itc"]
   - name: Nestlé India
     ticker: NESTLEIND
+    default_scope: standalone   # added 19 Nov 2026, see the note at the top of this file
     sector: fmcg
     is_bank: false
     is_nbfc: false
     pdf_prefix: Nestle
+    aliases: ["nestle india", "nestlé india", "nestle", "nestlé"]
   - name: Britannia Industries
     ticker: BRITANNIA
+    default_scope: standalone   # added 19 Nov 2026, see the note at the top of this file
     sector: fmcg
     is_bank: false
     is_nbfc: false
     pdf_prefix: Britannia
+    aliases: ["britannia industries", "britannia"]
   - name: Dabur India
     ticker: DABUR
     sector: fmcg
     is_bank: false
     is_nbfc: false
     pdf_prefix: Dabur
+    aliases: ["dabur india", "dabur"]
 
   # ---- Banks (Banking Regulation Act 3rd Schedule + RBI) ----
   - name: HDFC Bank
@@ -80,27 +107,32 @@ companies:
     is_bank: true
     is_nbfc: false
     pdf_prefix: HDFC
+    aliases: ["hdfc bank", "hdfcbank", "hdfc"]
   - name: ICICI Bank
     ticker: ICICIBANK
     sector: bank
     is_bank: true
     is_nbfc: false
     pdf_prefix: ICICI
+    aliases: ["icici bank", "icicibank", "icici"]
   - name: State Bank of India
     ticker: SBIN
     sector: bank
     is_bank: true
     is_nbfc: false
     pdf_prefix: SBI
+    aliases: ["state bank of india", "sbi", "sbin"]
   - name: Axis Bank
     ticker: AXISBANK
     sector: bank
     is_bank: true
     is_nbfc: false
     pdf_prefix: AxisBank
+    aliases: ["axis bank", "axisbank", "axis"]
   - name: Kotak Mahindra Bank
     ticker: KOTAKBANK
     sector: bank
     is_bank: true
     is_nbfc: false
     pdf_prefix: KotakBank
+    aliases: ["kotak mahindra bank", "kotak bank", "kotakbank", "kotak"]

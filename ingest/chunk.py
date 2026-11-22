@@ -35,12 +35,16 @@ def chunk_pages(pages: list[dict], meta: dict, keep_sections: set[str] | None = 
         words = pg["text"].split()
         if not words:
             continue
+        # CHANGED (18 Nov 2026): the scope now comes from the PAGE when the page has one.
+        # OLD: every chunk took meta['scope'], which run_ingest sets to "consolidated" for the whole report, so
+        #      standalone statements and all narrative pages were stamped "consolidated" too.
+        scope = pg["scope"] if "scope" in pg else meta.get("scope", "")
         header = (
-            f"[{meta['company']} | FY{meta['fiscal_year']} | {meta.get('scope','')} | "
+            f"[{meta['company']} | FY{meta['fiscal_year']} | {scope} | "
             f"{section} | p{pg['page']}]"
         )
         for i, body in enumerate(_windows(words, WINDOW, OVERLAP)):
-            cid = f"{meta['ticker']}-{meta['fiscal_year']}-{meta.get('scope','')}-p{pg['page']}-{i}"
+            cid = f"{meta['ticker']}-{meta['fiscal_year']}-p{pg['page']}-{i}"       # OLD: ...-{meta.get('scope','')}-p... (scope removed: page + index is already unique)
             chunks.append(
                 {
                     "id": cid,
@@ -48,7 +52,7 @@ def chunk_pages(pages: list[dict], meta: dict, keep_sections: set[str] | None = 
                     "company": meta["company"],
                     "ticker": meta["ticker"],
                     "fiscal_year": meta["fiscal_year"],
-                    "scope": meta.get("scope", ""),
+                    "scope": scope,                             # OLD: meta.get("scope", "")
                     "statement": section,
                     "section": section,
                     "page": pg["page"],

@@ -1,0 +1,28 @@
+# Runs the unit tests on every push and pull request.
+#
+# ADDED 22 Nov 2026 (tracker W4-07).
+# WHY: a change that breaks a test should be seen on GitHub at once, not on a teammate's laptop a day later.
+# The tests use a scripted model and small made-up figures, so they need no API key, no certificate, no report
+# PDFs, no Qdrant and no network. Nothing secret is used or stored by this workflow.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install the project with the test tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run the tests
+        run: python -m pytest -q
