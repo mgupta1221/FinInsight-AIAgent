@@ -44,9 +44,33 @@ TOOLS = {"get_financial_item": get_financial_item, "normalise_units": normalise,
 # a summary can PREFER the right part of the report: a strategy summary should come from the overview and the
 # MD&A, not from a note on capital management. It is a preference, not a filter: if those sections return
 # nothing, passages from elsewhere are still used.
+# ADDED (21 Nov 2026, fourth practice run): what a summary of each kind of topic should consist of. The line is
+# given to the writer together with the passages (Run.summarise stores it, writer.write_summary uses it).
+# WHY: asked for "strategic priorities", the model listed the year's results (sales growth, EBITDA, dividend);
+#      asked for "risks", it described committees and policies. The general prompt says "name the item the topic
+#      asks for"; a small model follows a concrete instruction for the topic at hand much better.
+SUMMARY_FOCUS = [
+    (r"risk", "List the risks themselves. For each one say what could go wrong and how the company deals with it. "
+              "Committees, policies, awards and the general risk framework are not risks."),
+    (r"segment", "For each business segment give its result with the figures and the reason the report states. "
+                 "Use a figure only if the sentence or table row it comes from names that segment."),
+    (r"strateg|outlook|priorit|future|plan", "List the priorities and plans: what the company says it will focus on or do next. "
+                                             "The year's financial results (sales growth, profit, dividend, cash flow) are not priorities."),
+    (r"commentary|management discussion|md&a|mdna", "Give management's main statements about the year: what drove performance and what changed."),
+    (r"performance|results|business|financial review|growth", "Give the main results with their figures and the reasons the report states."),
+]
+
 SUMMARY_TOPICS = [
     (r"risk", "principal risks risk management mitigation risks and opportunities",
      ["risk", "mdna", "directors_report", "overview"]),
+    # ADDED (21 Nov 2026): "segment commentary" had no entry, so Wipro's summary came from the business-environment
+    # pages and not from the pages that discuss the IT Services and IT Products segments.
+    # OLD: (r"segment", "...", ["mdna", "overview", "directors_report", "notes"]),
+    # CHANGED (21 Nov 2026, after the summaries2 run): "notes" removed. WHY: "segment commentary" is the discussion in
+    # the MD&A; with the notes preferred too, Wipro's summary was written from the segment note of the financial
+    # statements (tables of adjustments), not from the commentary.
+    (r"segment", "segment revenue segment results operating results of the segment results of operations",
+     ["mdna", "overview", "directors_report"]),
     (r"strateg|outlook|priorit|future|plan", "strategy strategic priorities outlook growth opportunities way forward",
      ["overview", "mdna", "directors_report"]),
     (r"commentary|management discussion|md&a|mdna", "management discussion and analysis review of performance operating environment",
@@ -204,10 +228,15 @@ class Run:
                 merged.append([a, b])
         return " ... ".join(text[a:b] for a, b in merged)[:1600]
 
-    def search(self, query: str, company: str, fy: str, top_k: int) -> list[dict]:
+    # OLD: def search(self, query: str, company: str, fy: str, top_k: int) -> list[dict]:
+    #          hits = search_report(query, company=company, fiscal_year=fy, top_k=top_k)
+    # NEW (21 Nov 2026): optional `scope`, to search only pages labelled standalone or consolidated (see reported_figure).
+    # (21 Nov 2026, third practice run: `section` added, to search one labelled part of the report.)
+    def search(self, query: str, company: str, fy: str, top_k: int, scope: str | None = None, section: str | None = None) -> list[dict]:
         """search_report, with the chunk's metadata header removed from the text and failures turned into ToolError."""
         try:
-            hits = search_report(query, company=company, fiscal_year=fy, top_k=top_k)
+            hits = search_report(query, company=company, fiscal_year=fy, top_k=top_k, **({"scope": scope} if scope else {}),
+                                 **({"statement": section} if section else {}))
         except ToolError:
             raise
         except Exception as e:  # noqa: BLE001  (index missing, Qdrant down)
@@ -237,6 +266,19 @@ class Run:
         # WHY: see `patterns` in config/glossary.yaml (Axis Bank gross NPA ratio). With 4 passages the note that
         #      prints the ratio was often not among them.
         passages = self.search(spec["search"], company, fy, top_k=8)
+        # NEW (21 Nov 2026): also search the pages LABELLED with the asked scope, and prefer them.
+        # WHY: first evaluation run, ratio-015. Kotak Mahindra Bank prints two net interest margins, 4.60% for the
+        #      bank and 4.63% for the group. The question is standalone, the model was shown the group's "Key
+        #      Ratios" page and answered 4.63%. Pages that carry the asked scope in their label (the standalone
+        #      notes and statements) are now fetched as well; if one of them mentions the ratio, the model is
+        #      shown only those. Ratios printed only in unlabelled text (CASA in the MD&A) work as before.
+        if self.plan.scope in ("standalone", "consolidated"):
+            try:
+                scoped = [dict(p, scope=p.get("scope") or self.plan.scope)
+                          for p in self.search(spec["search"], company, fy, top_k=4, scope=self.plan.scope)]
+            except ToolError:
+                scoped = []
+            passages = scoped + [p for p in passages if p["citation"] not in {s["citation"] for s in scoped}]
         passages = [p for p in passages if p.get("scope") == self.plan.scope] + [p for p in passages if p.get("scope") != self.plan.scope]
         # When the line is printed on several pages, the page of the asked scope wins, then the EARLIEST page.
         # WHY the earliest: Kotak's FY2024-25 notes print the table twice, this year's on page 241 (1.42%) and last
@@ -251,46 +293,71 @@ class Run:
                 self.figures.append(Figure(name=metric, company=company, fiscal_year=fy, value=value, unit=spec["unit"],
                                            page=p["page"], citation=p["citation"]))
                 return value
-        passages = passages[:5]
-        blocks, removed = [], 0
-        for p in passages:
-            text, n = sanitise(p["text"])
-            removed += n
-            snippet = self._focus(text, spec.get("keywords", []))
-            if snippet:
-                blocks.append(f"[{p['citation']}]\n{snippet}")
-        if removed:
-            self.trace.append({"note": f"sanitiser removed {removed} instruction-like sentence(s) from retrieved text"})
-        if not blocks:
-            self.trace.append({"note": f"no retrieved passage mentions {spec.get('keywords')}"})
+        # CHANGED (21 Nov 2026, after the second practice run). The block below replaces the single model call that
+        # stood here (kept at the end of this file as OLD_REPORTED_BLOCK).
+        # WHY: second practice run, compare-004. Shown a page with "CASA deposits ... 7,435.88 billion", the model
+        #      returned 7435.88 as ICICI Bank's CASA RATIO. The number is printed on the page, so the old check
+        #      passed, and ICICI was ranked first with "7435.88%". Three changes:
+        #      1. a ratio in per cent must lie between 0 and 100; anything else is rejected;
+        #      2. passages in which a percentage stands next to the ratio's name are shown first;
+        #      3. after a rejected reply the page it came from is set aside and the model is asked once more
+        #         with the remaining passages (at most three attempts), so one misleading page does not end the
+        #         question.
+        keywords, is_percent = spec.get("keywords", []), spec.get("unit") == "percent"
+
+        def snippet_of(p: dict) -> str:
+            return self._focus(sanitise(p["text"])[0], keywords)
+
+        def has_pct(p: dict) -> bool:
+            return bool(re.search(r"\d\s*(%|per cent|percent)", snippet_of(p)))
+        usable = [p for p in passages if snippet_of(p)]
+        if not usable:
+            self.trace.append({"note": f"no retrieved passage mentions {keywords}"})
             raise ToolError(f"could not find {metric.replace('_', ' ')} for {company} FY{fy} in the retrieved pages")
+        usable = [p for p in usable if has_pct(p)] + [p for p in usable if not has_pct(p)] if is_percent else usable
+        same_scope = [p for p in usable if p.get("scope") == self.plan.scope and (has_pct(p) or not is_percent)]
+        if same_scope:
+            self.trace.append({"note": f"{len(same_scope)} page(s) labelled {self.plan.scope} mention the ratio; these are shown to the model first"})
+        pool, rest = (same_scope, [p for p in usable if p not in same_scope]) if same_scope else (usable, [])
         year_end = "31 March 20" + fy[-2:]
         system = ("You read excerpts of a company's annual report and pick out ONE figure. Reply with JSON: found (true/false), "
                   "value (the number only), quote (the number exactly as printed, digits and decimal point only), "
                   "citation (the bracketed id above the excerpt it came from). The figure may be worded differently from its name. "
                   "Take the figure for the requested year (the current year), not the previous year. "
-                  "If the excerpts do not state it, set found to false. Never calculate and never guess.")
-        user = (f"Figure wanted: {metric.replace('_', ' ')} of {company} for FY{fy} (year ended {year_end}).\n"
-                f"Meaning: {spec.get('hint', '')}.\n\n" + "\n\n".join(blocks))
-        ex = self.llm.json(system, user, Extracted, max_tokens=120)
-        self.trace.append({"node": "extract", "metric": metric, "model_reply": ex.model_dump()})
-        cited = ex.citation.strip("[] ")
-        page = next((p for p in passages if p["citation"] == cited), None)
-        if page is None and ex.found and len({p["citation"] for p in passages}) == 1:
-            page = passages[0]
-        digits = re.sub(r"[^\d.]", "", ex.quote).strip(".") or (f"{ex.value:g}" if ex.value is not None else "")
-        printed = bool(page) and bool(digits) and re.search(rf"(?<![\d.]){re.escape(digits)}(?![\d])", page["text"].replace(",", "")) is not None
-        if not ex.found or ex.value is None or not printed:
-            self.trace.append({"note": f"reported {metric} for {company} could not be verified on a retrieved page"})
-            raise ToolError(f"could not find a verifiable {metric.replace('_', ' ')} for {company} FY{fy}")
-        try:
-            if abs(float(digits) - float(ex.value)) > 1e-6:
-                raise ValueError
-        except ValueError:
-            raise ToolError(f"the model's value for {metric} does not match its own quote") from None
-        self.figures.append(Figure(name=metric, company=company, fiscal_year=fy, value=float(ex.value), unit=spec["unit"],
-                                   page=page["page"], citation=page["citation"]))
-        return float(ex.value)
+                  + ("The figure is a PERCENTAGE between 0 and 100, never an amount in crore, million or billion. " if is_percent else "")
+                  + "If the excerpts do not state it, set found to false. Never calculate and never guess.")
+        for attempt in range(3):
+            shown = pool[:5]
+            if not shown:
+                break
+            user = (f"Figure wanted: {metric.replace('_', ' ')} of {company} for FY{fy} (year ended {year_end}).\n"
+                    f"Meaning: {spec.get('hint', '')}.\n\n" + "\n\n".join(f"[{p['citation']}]\n{snippet_of(p)}" for p in shown))
+            ex = self.llm.json(system, user, Extracted, max_tokens=120)
+            self.trace.append({"node": "extract", "metric": metric, "attempt": attempt + 1, "model_reply": ex.model_dump()})
+            cited = ex.citation.strip("[] ")
+            page = next((p for p in shown if p["citation"] == cited), None)
+            if page is None and ex.found and len({p["citation"] for p in shown}) == 1:
+                page = shown[0]
+            digits = re.sub(r"[^\d.]", "", ex.quote).strip(".") or (f"{ex.value:g}" if ex.value is not None else "")
+            printed = bool(page) and bool(digits) and re.search(rf"(?<![\d.]){re.escape(digits)}(?![\d])", page["text"].replace(",", "")) is not None
+            try:
+                agrees = ex.value is not None and bool(digits) and abs(float(digits) - float(ex.value)) <= 1e-6
+            except ValueError:
+                agrees = False
+            in_range = ex.value is not None and (not is_percent or 0 <= float(ex.value) <= 100)
+            if ex.found and printed and agrees and in_range:
+                self.figures.append(Figure(name=metric, company=company, fiscal_year=fy, value=float(ex.value), unit=spec["unit"],
+                                           page=page["page"], citation=page["citation"]))
+                return float(ex.value)
+            why = ("not found" if not ex.found or ex.value is None else "not a percentage between 0 and 100" if not in_range
+                   else "not printed on the cited page" if not printed else "value and quote differ")
+            self.trace.append({"note": f"reply {attempt + 1} for {metric} rejected ({why})"})
+            # next attempt: without the page just cited; when the preferred pages are used up, the other passages
+            pool = [p for p in pool if page is None or p["citation"] != page["citation"]] if page is not None else []
+            if not pool:
+                pool, rest = rest, []
+        self.trace.append({"note": f"reported {metric} for {company} could not be verified on a retrieved page"})
+        raise ToolError(f"could not find a verifiable {metric.replace('_', ' ')} for {company} FY{fy}")
 
     # NEW (19 Nov 2026): a share / percentage that is not in the glossary, worked out from the report text.
     # WHY: see planner.TEXT_RATIO. This is the "multi-step" path: search the notes, pick the two rows, check
@@ -385,6 +452,29 @@ class Run:
                 den = moved
             except ValueError:
                 den = None
+        # NEW (21 Nov 2026): a question about a "total" uses the column that IS a total.
+        # WHY: first evaluation run, multihop-003. The table has three columns per year: External, Inter Segment,
+        #      Total. The question asks for the share of "total segment revenue"; the model pointed at the
+        #      External column in both rows (29.93%), gold uses the Total column (26.69%). Code can recognise the
+        #      total column without knowing its heading: in each row it is the number that equals the sum of the
+        #      ones before it (24,203.75 + 6.00 = 24,209.75). When both rows have such a column and the question
+        #      says "total", both numbers are taken from it.
+        if row_n and row_d and num is not None and den is not None and re.search(r"\btotal\b", question, re.I):
+            def total_at(run: list[str]) -> int | None:
+                vals = []
+                for t in run[: len(run) // 2 if len(run) % 2 == 0 and len(run) >= 6 else len(run)]:
+                    try:
+                        vals.append(0.0 if t in "-–—" else float(t.strip("()%")))
+                    except ValueError:
+                        return None
+                ok = len(vals) >= 3 and abs(sum(vals[:-1]) - vals[-1]) <= max(0.05, 1e-6 * abs(vals[-1]))
+                return len(vals) - 1 if ok else None
+            tn, td = total_at(row_n[1]), total_at(row_d[1])
+            if tn is not None and tn == td and row_n[2] <= tn and row_n[2] != tn:
+                num, den = float(row_n[1][tn].strip("()%")), float(row_d[1][td].strip("()%"))
+                self.trace.append({"note": f"the question asks about a total: both numbers taken from the total column ({num:,.2f} / {den:,.2f})"})
+                row_n, row_d = (row_n[0], row_n[1], tn), (row_d[0], row_d[1], td)
+                parts.numerator_quote, parts.denominator_quote = row_n[1][tn], row_d[1][td]
         if num is not None and not about(re.sub(r"[^\d.]", "", parts.numerator_quote).strip("."), row_n[0] if row_n else ""):
             self.trace.append({"note": f"the part the model pointed at is not about {specific}; not used"})
             raise fail
@@ -467,20 +557,93 @@ class Run:
             if re.search(pattern, topic.lower()):
                 query, preferred = f"{topic} {extra}", sections
                 break
-        found = self.search(query, company, fiscal_year, top_k=20)      # OLD: top_k=10, used in search order
+        # NEW (21 Nov 2026): a summary asked "in its MD&A" prefers the MD&A and the directors' report.
+        if re.search(r"md&a|mda\b|management discussion", topic.lower()):
+            preferred = ["mdna", "directors_report"] + [s for s in preferred if s not in ("mdna", "directors_report")]
+        found = self.search(query, company, fiscal_year, top_k=30)      # OLD: top_k=20 (and 10 before that)
+        # NEW (21 Nov 2026, third practice run): a summary asked "in its MD&A" also searches INSIDE the MD&A.
+        # WHY: summary-004 (HUL's strategic priorities in its MD&A). Preferring MD&A pages only reorders what the
+        #      general search returned, and it returned none: the summary was written from the shareholder pages
+        #      (39 to 42) and listed results, not priorities. The MD&A and the directors' report are now searched
+        #      on their own and their passages are put in front.
+        if re.search(r"md&a|mda\b|management discussion", topic.lower()):
+            inside = []
+            for sec in ("mdna", "directors_report"):
+                try:
+                    inside += self.search(query, company, fiscal_year, top_k=8, section=sec)
+                except ToolError:
+                    pass
+            merged, seen = [], set()
+            for p in inside + found:                             # each passage once, the MD&A ones first
+                key = (p["citation"], p["text"][:80])
+                if key not in seen:
+                    seen.add(key)
+                    merged.append(p)
+            found = merged
         ordered = [p for p in found if p.get("section") in preferred] + [p for p in found if p.get("section") not in preferred]
-        passages, pages = [], set()
+        if re.search(r"md&a|mda\b|management discussion", topic.lower()):      # MD&A pages before the other preferred sections
+            first = [p for p in ordered if p.get("section") in ("mdna", "directors_report")]
+            ordered = first + [p for p in ordered if p.get("section") not in ("mdna", "directors_report")]
+        # CHANGED (21 Nov 2026): up to 8 passages, at most 2 from one page.  OLD: one passage per page, 4 pages:
+        #     passages, pages = [], set()
+        #     for p in ordered:
+        #         if p["page"] in pages: continue
+        #         pages.add(p["page"]) ... passages.append(...text[:1500]) ... if len(passages) == 4: break
+        # WHY: first evaluation run, 1 of 8 summaries passed. The right pages were found, but a page that lists
+        #      several risks was represented by ONE passage of 1,500 characters, so most of the list never
+        #      reached the model (ITC's page 111 covers cyber security and climate change in different
+        #      passages). Two passages per page and up to eight in all show about twice as much of the section,
+        #      still far inside the token limit for one question.
+        # NEW (21 Nov 2026, fourth practice run): read the report's own SECTION on the topic, not scattered pages.
+        # WHY: a report discusses a topic on a run of neighbouring pages (SBI's risk management: pages 115 to 119).
+        #      The search also returns single pages elsewhere that only mention it (SBI: 468, 473, 481 in the
+        #      sustainability report), and with "two passages per page" those took half of the summary. Among
+        #      the 20 best passages, pages at most two apart are grouped; the group with the most passages is
+        #      taken as the section, and its passages go first. Passages from elsewhere are added only when the
+        #      section gives fewer than six.
+        #      Also: up to 9 passages, at most 3 per page, 1,300 characters each (was 8, 2 and 1,500), so a page
+        #      that lists several items is shown more completely for about the same number of tokens.
+        top = ordered[:20]
+        runs: list[list[int]] = []
+        for pg in sorted({p["page"] for p in top}):
+            if runs and pg - runs[-1][-1] <= 2:
+                runs[-1].append(pg)
+            else:
+                runs.append([pg])
+        # CHANGED (21 Nov 2026, after the summaries2 run).
+        # OLD: votes = lambda run: sum(1 for p in top if p["page"] in run)      (one vote per passage)
+        #      section = set(max(runs, key=lambda r: (votes(r), -best_rank(r))))
+        # WHY: for Nestle the group with the MOST passages was pages 228-231 (workplace hazard assessment), which
+        #      the search had ranked low; the summary was about safety audits. A passage now counts by its rank
+        #      (1, 1/2, 1/3 ...), so a group the search puts at the top beats a larger group further down.
+        # CHANGED AGAIN (21 Nov 2026, after the summaries3 run).
+        # OLD: votes = lambda run: sum(1.0 / (i + 1) for i, p in enumerate(top) if p["page"] in run)
+        # WHY: 1/rank lets the first two or three passages decide alone. HDFC Bank: pages 110-112 (three passages,
+        #      ranked 1, 2 and 5: emerging risks) beat the risk section 101-107 with twelve passages, and the summary
+        #      lost credit, market and liquidity risk. 1/sqrt(rank) is in between: rank still counts, but a section
+        #      with many passages is not beaten by a few at the top. Replayed on the searches of the summaries3 run,
+        #      this picks the pages of the gold answer for seven of the eight questions (not Nestle, see docs/CHANGES_AND_STATUS.md section 41).
+        votes = lambda run: sum((i + 1) ** -0.5 for i, p in enumerate(top) if p["page"] in run)   # noqa: E731
+        section = set(max(runs, key=votes)) if runs else set()
+        if len(runs) > 1:
+            self.trace.append({"note": f"pages {min(section)}-{max(section)} taken as the report's section on the topic"})
+        ordered = [p for p in ordered if p["page"] in section] + [p for p in ordered if p["page"] not in section]
+        passages, per_page = [], {}
         for p in ordered:
-            if p["page"] in pages:
+            if p["page"] not in section and len(passages) >= 6:
+                break
+            if per_page.get(p["page"], 0) >= 3:
                 continue
-            pages.add(p["page"])
+            per_page[p["page"]] = per_page.get(p["page"], 0) + 1
             text, n = sanitise(p["text"])
             if n:
                 self.trace.append({"note": f"sanitiser removed {n} instruction-like sentence(s) from {p['citation']}"})
-            passages.append({"citation": p["citation"], "page": p["page"], "text": text[:1500]})
-            if len(passages) == 4:
+            passages.append({"citation": p["citation"], "page": p["page"], "text": text[:1300]})
+            if len(passages) == 9:
                 break
+        # OLD selection (kept): at most 2 passages per page in search order, 8 in all, text[:1500], no grouping.
         self.result["passages"] = passages
+        self.result["focus"] = next((line for pattern, line in SUMMARY_FOCUS if re.search(pattern, topic.lower())), "")
 
     def execute(self, steps: list[AgentStep]) -> dict:
         if len(steps) > settings.max_steps:
@@ -497,3 +660,55 @@ class Run:
                 raise Escalate(f"unknown step '{step.tool}'")
         self.result.update(values=self.values, figures=self.figures)
         return self.result
+
+
+# =====================================================================================================
+# OLD_REPORTED_BLOCK (kept, 21 Nov 2026). The second half of Run.reported_figure before the change above:
+# one model call, no range check, no second attempt.
+# =====================================================================================================
+#         # OLD: passages = passages[:5]   (then one block per passage, whatever its scope)
+#         same_scope = [p for p in passages if p.get("scope") == self.plan.scope
+#                       and self._focus(sanitise(p["text"])[0], spec.get("keywords", []))]
+#         if same_scope:
+#             self.trace.append({"note": f"{len(same_scope)} page(s) labelled {self.plan.scope} mention the ratio; only these are shown to the model"})
+#         passages = (same_scope or passages)[:5]
+#         blocks, removed = [], 0
+#         for p in passages:
+#             text, n = sanitise(p["text"])
+#             removed += n
+#             snippet = self._focus(text, spec.get("keywords", []))
+#             if snippet:
+#                 blocks.append(f"[{p['citation']}]\n{snippet}")
+#         if removed:
+#             self.trace.append({"note": f"sanitiser removed {removed} instruction-like sentence(s) from retrieved text"})
+#         if not blocks:
+#             self.trace.append({"note": f"no retrieved passage mentions {spec.get('keywords')}"})
+#             raise ToolError(f"could not find {metric.replace('_', ' ')} for {company} FY{fy} in the retrieved pages")
+#         year_end = "31 March 20" + fy[-2:]
+#         system = ("You read excerpts of a company's annual report and pick out ONE figure. Reply with JSON: found (true/false), "
+#                   "value (the number only), quote (the number exactly as printed, digits and decimal point only), "
+#                   "citation (the bracketed id above the excerpt it came from). The figure may be worded differently from its name. "
+#                   "Take the figure for the requested year (the current year), not the previous year. "
+#                   "If the excerpts do not state it, set found to false. Never calculate and never guess.")
+#         user = (f"Figure wanted: {metric.replace('_', ' ')} of {company} for FY{fy} (year ended {year_end}).\n"
+#                 f"Meaning: {spec.get('hint', '')}.\n\n" + "\n\n".join(blocks))
+#         ex = self.llm.json(system, user, Extracted, max_tokens=120)
+#         self.trace.append({"node": "extract", "metric": metric, "model_reply": ex.model_dump()})
+#         cited = ex.citation.strip("[] ")
+#         page = next((p for p in passages if p["citation"] == cited), None)
+#         if page is None and ex.found and len({p["citation"] for p in passages}) == 1:
+#             page = passages[0]
+#         digits = re.sub(r"[^\d.]", "", ex.quote).strip(".") or (f"{ex.value:g}" if ex.value is not None else "")
+#         printed = bool(page) and bool(digits) and re.search(rf"(?<![\d.]){re.escape(digits)}(?![\d])", page["text"].replace(",", "")) is not None
+#         if not ex.found or ex.value is None or not printed:
+#             self.trace.append({"note": f"reported {metric} for {company} could not be verified on a retrieved page"})
+#             raise ToolError(f"could not find a verifiable {metric.replace('_', ' ')} for {company} FY{fy}")
+#         try:
+#             if abs(float(digits) - float(ex.value)) > 1e-6:
+#                 raise ValueError
+#         except ValueError:
+#             raise ToolError(f"the model's value for {metric} does not match its own quote") from None
+#         self.figures.append(Figure(name=metric, company=company, fiscal_year=fy, value=float(ex.value), unit=spec["unit"],
+#                                    page=page["page"], citation=page["citation"]))
+#         return float(ex.value)
+# 

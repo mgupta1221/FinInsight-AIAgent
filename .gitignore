@@ -32,3 +32,9 @@ trace.jsonl
 # Gold-answer helpers (17 Nov 2026): backup written by eval/compute_gold.py, Excel lock files
 eval/*.bak
 ~$*
+# 22 Nov 2026: notes exported from the app (DRAFT and approved) stay on the laptop
+results/notes/
+# 22 Nov 2026: files SQLite writes beside store/memory.sqlite while the app is open (they hold questions asked)
+store/*.sqlite-journal
+store/*.sqlite-wal
+store/*.sqlite-shm

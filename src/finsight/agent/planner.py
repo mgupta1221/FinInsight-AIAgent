@@ -200,6 +200,10 @@ def merge_reply(pending: str, reply: str) -> str:
                 base = re.sub(rf"\b{re.escape(name)}\b('s)?", "", base, flags=re.I)
     if years_in(reply):
         base = _FY.sub("", base)
+    # NEW (21 Nov 2026): a reply that names a scope replaces the scope words of the unfinished question, so the
+    # answer to "Do you want the standalone or the consolidated figure?" is not asked the same thing again.
+    if re.search(r"\b(standalone|consolidated)\b", reply, re.I):
+        base = re.sub(r"\b(standalone|consolidated)\b", "", base, flags=re.I)
     base = re.sub(r"\s+", " ", base).strip().rstrip("?.")
     return f"{base}. {reply.strip()}"
 
@@ -277,6 +281,17 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
         elif not t and len(name) > 2 and name.lower() in q:
             raise Refuse("not_in_corpus", f"{name} is not in my corpus. I cover 15 companies for "
                          + " and ".join(fy_label(y) for y in years_corpus) + ".")
+    # NEW (21 Nov 2026): a company the corpus does not cover is refused by CODE, whether or not the model names it.
+    # WHY: "What was Reliance Industries' revenue in FY2025-26?" is refused only if the model puts "Reliance
+    #      Industries" into its slots (the block above). When it does not, the question had no company at all
+    #      as far as the code could see, and the agent asked "Which company do you mean?" (found by the first
+    #      evaluation run without the model). A capitalised name followed by 's or ' that is not one of the 15
+    #      companies is now treated as a company outside the corpus.
+    if not tickers:
+        m = re.search(r"\b((?!FY\d)[A-Z][\w&.-]*(?:\s+(?!FY\d)[A-Z][\w&.-]*){0,3})['’]s?(?=\s|$|[?.,])", question)
+        if m and not resolve_ticker(m.group(1)) and m.group(1).lower() not in _FILLER:
+            raise Refuse("not_in_corpus", f"{m.group(1)} is not in my corpus. I cover 15 companies for "
+                         + " and ".join(fy_label(y) for y in years_corpus) + ".")
     if not tickers and follow:
         tickers = list(memory.get("companies", []))
     elif follow and plan.intent == "compare_rank" and len(tickers) == 1:
@@ -299,7 +314,17 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
 
     # metric and item: exact phrases first, then the model's choice, then loose words, then memory
     # OLD: metric = plan.metric if plan.metric in all_metrics() else None
-    metric = plan.metric if plan.metric in all_metrics() and not off_topic and not silent_follow_up else None
+    # OLD (earlier): metric = plan.metric if plan.metric in all_metrics() and not off_topic and not silent_follow_up else None
+    # NEW (21 Nov 2026): the model's metric is accepted only if the question names it.
+    # WHY: first evaluation run, multihop-006. "What were State Bank of India's restructured advances as a
+    #      percentage of gross advances?" The model chose the metric "gross_npa_ratio" (the words "gross advances"
+    #      were close enough for it) and the agent answered 1.49%, a real figure for a different question. Every
+    #      ratio in the glossary has its own words (METRIC_WORDS); if none of them is in the question, the
+    #      model's choice is dropped and the code decides (here: a share to be read from the report).
+    def _said(m: str) -> bool:
+        rx = [r for name, r in METRIC_WORDS if name == m]
+        return not rx or bool(re.search(rx[0], q))
+    metric = plan.metric if plan.metric in all_metrics() and not off_topic and not silent_follow_up and _said(plan.metric) else None
     # NEW (15 Nov 2026): the model's metric "yoy_change" is accepted only if the question itself is year-on-year.
     # WHY: for the follow-up "and 24-25" the model returned intent "yoy" AND metric "yoy_change". The intent is
     #      corrected further down, but the metric stayed, which blocked the remembered metric (operating margin)
@@ -362,7 +387,14 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
     #      question; the words "annual report" match administrative pages, not the business. A 300-page report
     #      cannot be summarised from five passages, so the agent asks which part is wanted.
     if intent == "summary" and not _summary_topic(question, tickers):
-        raise Clarify("An annual report is too long to summarise as a whole. Which part would you like: "
+        # OLD: raise Clarify("An annual report is too long to summarise as a whole. Which part would you like: "
+        #                    "business performance, key risks, strategy and outlook, or management commentary?")
+        # CHANGED (22 Nov 2026, mentor's review): the first sentence is removed and the agent asks directly.
+        # WHY: "An annual report is too long ..." reads as if the system had failed or hit a size limit. Nothing
+        #      failed: the agent summarises one part at a time so that every key point can cite its page. The
+        #      question now only offers the parts. The behaviour (status "clarify", the reply completes the
+        #      question) is unchanged.
+        raise Clarify("Which part of the report would you like summarised: "
                       "business performance, key risks, strategy and outlook, or management commentary?")
     banks = [bool(get_company_profile(t)["is_bank"]) for t in tickers]
     if metric in not_for_banks() and any(banks):
@@ -437,6 +469,12 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
     #      scope (15 questions: deposits, net profit, net interest income ...), which is also how a bank's
     #      results are normally quoted. The model's own guess of the scope is not used for a bank. Other
     #      companies keep the consolidated default. The answer always states the scope it used.
+    # NEW (21 Nov 2026): a question that names BOTH scopes is asked which one is wanted.
+    # WHY: "For Infosys revenue in FY2025-26, do you want standalone or consolidated?" (evaluation question
+    #      clarify-003) was answered with the standalone figure, because "standalone" is the first of the two
+    #      words the code looks for. With both words present the scope is not settled.
+    if "standalone" in q and "consolidated" in q:
+        raise Clarify("Do you want the standalone or the consolidated figure?")
     said = "standalone" if "standalone" in q else "consolidated" if "consolidated" in q else None
     # OLD: remembered = memory.get("scope") if follow else None
     # NEW (19 Nov 2026, later): a question that is complete in itself does not inherit the scope of the previous one.

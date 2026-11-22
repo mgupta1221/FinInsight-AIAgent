@@ -19,6 +19,14 @@ from finsight.schemas import AgentAnswer, AgentPlan, Verdict
 
 ADVICE = re.compile(r"\b(buy|sell|hold|invest(ors? should)?|undervalued|overvalued|recommend|attractive|bullish|bearish|"
                     r"will (grow|rise|fall|increase|decrease)|is expected to|outlook is)\b", re.I)
+# NEW (21 Nov 2026): the advice check for SUMMARIES.
+# WHY: summary-004 ("Summarise the strategic priorities Hindustan Unilever highlights ...") was rejected three times
+#      with "wording reads as advice or a forecast" and ended as "Unverified". A summary of a company's strategy
+#      reports what the COMPANY says it will do ("will invest up to Rs 2,000 crore", "is expected to"); ADVICE above
+#      was written for one-sentence numeric answers and treats those words as the agent's own forecast. For a
+#      summary only wording addressed to an investor counts as advice.
+SUMMARY_ADVICE = re.compile(r"\b(investors? should|you should|should (buy|sell|invest)|(buy|sell|hold) (the |its |these )?(shares?|stock)|"
+                            r"undervalued|overvalued|bullish|bearish|price target|we recommend|is a good investment|worth buying)\b", re.I)
 NUMBER = re.compile(r"(?<![\w-])\(?-?\d[\d,]*(?:\.\d+)?\)?%?")
 
 
@@ -56,6 +64,12 @@ def review(answer: AgentAnswer, plan: AgentPlan, result: dict, expected_formula:
         retrieved = {p["citation"] for p in result.get("passages", [])}
         if len(answer.key_points) < 3:
             reasons.append("fewer than 3 key points")
+        # NEW (21 Nov 2026): a key point is a sentence, not a heading.
+        # WHY: second practice run. The model answered "Summarise the top risks ..." with labels of two or three
+        #      words ("Cybersecurity risks"). They name the right items and say nothing about them. A key point
+        #      of fewer than eight words is rejected, which sends the summary back to the writer.
+        if any(len(k.point.split()) < 8 for k in answer.key_points):
+            reasons.append("a key point is a label of a few words, not a sentence")
         bad = [k.citation for k in answer.key_points if k.citation not in retrieved]
         if bad:
             reasons.append(f"key points cite pages that were not retrieved: {sorted(set(bad))}")
@@ -79,6 +93,7 @@ def review(answer: AgentAnswer, plan: AgentPlan, result: dict, expected_formula:
         if other in answer.answer.lower() and str(plan.scope) not in answer.answer.lower():
             reasons.append("answer states the wrong scope")
         text = answer.answer
-    if ADVICE.search(text):
+    # OLD: if ADVICE.search(text):
+    if (SUMMARY_ADVICE if plan.intent == "summary" else ADVICE).search(text):
         reasons.append("wording reads as advice or a forecast")
     return Verdict(ok=not reasons, reasons=reasons)

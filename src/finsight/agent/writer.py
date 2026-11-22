@@ -137,11 +137,19 @@ def write(plan: AgentPlan, result: dict, llm=None, use_model: bool = True) -> Ag
     return a
 
 
-def write_summary(plan: AgentPlan, result: dict, llm) -> AgentAnswer:
+# OLD: def write_summary(plan: AgentPlan, result: dict, llm) -> AgentAnswer:
+# NEW (21 Nov 2026): `feedback` = why the critic rejected the previous attempt. WHY: a rejected summary was simply
+# requested again with the same words, so the model had no reason to answer differently.
+def write_summary(plan: AgentPlan, result: dict, llm, feedback: str = "") -> AgentAnswer:
     passages = result["passages"]
     user = (f"Topic: {plan.topic}\nCompany: {_name(plan.companies[0])}, {fy_label(plan.fiscal_years[-1])}\n\n"
             + "\n\n".join(f"[{p['citation']}]\n{p['text']}" for p in passages))
-    s = llm.json(_prompts()[1], user, SummaryDraft, max_tokens=600)
+    # NEW (21 Nov 2026): the instruction for this kind of topic (executor.SUMMARY_FOCUS), placed before the passages.
+    if result.get("focus"):
+        user = user.replace("\n\n", f"\nWhat the key points must be: {result['focus']}\n\n", 1)
+    if feedback:
+        user += f"\n\nYour previous answer was rejected: {feedback}. Write it again and correct this."
+    s = llm.json(_prompts()[1], user, SummaryDraft, max_tokens=1000)      # OLD: 600, then 800 (21 Nov 2026: room for eight sentences)
     points = [k.model_copy(update={"citation": k.citation.strip("[] ")}) for k in s.key_points]
     return AgentAnswer(status="answered", intent="summary", companies=plan.companies, fiscal_years=plan.fiscal_years,
                        answer=s.answer, key_points=points, citations=sorted({k.citation for k in points}))

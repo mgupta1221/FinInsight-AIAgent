@@ -276,7 +276,7 @@ Project/
 ```
 **Top-level project files — how to set up, run, and ship the project**
 ```
-  BUILD_PLAN.md            # This plan, frozen. The single reference everyone (and Claude) builds from.
+  BUILD_PLAN.md            # This plan, frozen. The single reference everyone builds from.
   README.md                # Step-by-step: how to install, ingest the PDFs, and run each week's chat.
   pyproject.toml           # Lists the project's Python dependencies and makes `finsight` installable.
   .env.example             # Template of all settings (API key, cert path, URLs). Copy to `.env` and fill in.

@@ -118,7 +118,7 @@ python scripts/endpoint_check.py
 python -m pytest -q
 ```
 
-Expected: **165 passed**.
+Expected: **193 passed**.
 
 ## 8\. Build the figure store (needed for number questions)
 
@@ -153,7 +153,7 @@ python scripts/ask.py --reset
 
 `--trace` prints every step. `--reset` clears the conversation memory. `--session NAME` keeps separate conversations.
 
-Chat screen in the browser. It uses the agent by default and shows the answer, the formula, the figures used with their pages, and a "How I got this" trace. The sidebar has a switch back to the older "Simple search (Week 1)" mode and a "New conversation" button that clears the memory:
+Chat screen in the browser. It uses the agent by default and shows the answer, the formula, the figures used with their pages, and a "How I got this" trace. The sidebar has a switch to "Basic search (baseline, no checks)", which is one search and one model answer without the agent, and a "New conversation" button that starts a fresh conversation:
 
 ```
 streamlit run app/streamlit_app.py
@@ -183,3 +183,74 @@ Nothing new to install. Start the chat screen as before (`streamlit run app/stre
 under "Quick lookup": pick a sector, one or more companies, a figure or ratio, a year and the scope, then press
 "Get answer". Pick two or more companies to compare them. The list of figures changes with the sector (bank
 figures for banks). You can still type any question in the chat box.
+
+## Run the evaluation (added 21 Nov 2026)
+
+Nothing new to install. Qdrant must be running and `.env` must hold the endpoint key, as for the chat screen.
+
+```
+python eval/run_eval.py --limit 5            a quick try with the first 5 questions
+python eval/run_eval.py                      practice run, all 90 questions, the agent
+python eval/run_eval.py --mode simple        practice run, simple search (for the comparison)
+python eval/run_eval.py --resume results/runs/<folder>      continue a run that stopped
+python eval/run_eval.py --official           OFFICIAL run: only on frozen code
+python eval/metrics.py results/official      average over the official runs
+```
+
+Practice runs are saved in `results/runs/` (not pushed to GitHub; delete them when you like). Official runs are
+saved in `results/official/` and are committed. In each run folder open `scored.csv` in Excel to see every
+question, and `errors.csv` for the wrong ones with a likely cause.
+
+### Reviewing the summaries of a run (added 21 Nov 2026)
+
+Each run folder has `summary_review.csv`: the gold key points beside the agent's summary. Open it in Excel, type Y
+or N in the column `human_covered` for every row, save it as CSV, then:
+
+```
+python eval/run_eval.py --rescore results/runs/<folder>
+```
+
+## Optional: run everything with Docker
+
+You do not need Docker for the steps above. This is a second way to start the project: one command starts the
+chat screen, the search database (Qdrant) and the tracing service (Langfuse), with Python and the libraries
+already inside. **The team has not run this end to end yet** (tracker W4-06); treat the first run as a test.
+
+What Docker does not contain, and you must still provide: the API key (in `.env`), the certificate file
+`vm04-ca.crt`, and the 30 report PDFs. None of them is in the image or on GitHub.
+
+1. Install Docker Desktop and start it.
+2. In the project folder: copy `.env.example` to `.env` and set `OPENAI_API_KEY`.
+3. Put `vm04-ca.crt` in the project folder and the PDFs in `data/manual-collection/`.
+4. Build and start (the first build downloads several GB and can take 20 minutes or more):
+
+   ```
+   docker compose --env-file .env up --build --wait
+   ```
+
+5. Build the figure store and the search index inside Docker (once; needed even if you already ran the ingest
+   without Docker, because Docker uses its own Qdrant):
+
+   ```
+   docker compose exec app python -m ingest.run_ingest
+   ```
+
+6. Open http://localhost:8501 for the chat screen.
+7. A short evaluation inside Docker, to confirm the model endpoint is reached:
+
+   ```
+   docker compose exec app python eval/run_eval.py --limit 5
+   ```
+
+8. Stop: `docker compose --env-file .env down`
+
+Notes:
+
+- The folders `store/` and `data/` are shared with your laptop, so the figure store, past conversations and
+  parsed text stay after the containers stop. The Qdrant index is kept in a Docker volume.
+- Inside Docker the settings `QDRANT_URL`, `LANGFUSE_HOST` and `OPENAI_CA_CERT` are set by
+  `docker-compose.yml`; the values in `.env` for these three are ignored.
+- The `docs/` and `results/` folders are not copied into the image. Evaluation results written inside the
+  container are lost when it is removed; run the official evaluation without Docker.
+- If only the search database is wanted from Docker: `docker compose --env-file .env up -d qdrant` and keep
+  `QDRANT_URL=http://localhost:6333` in `.env`.

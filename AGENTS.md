@@ -1,6 +1,6 @@
 # AGENTS.md — working agreement for AI assistants
 
-These rules apply to any LLM/agent (Claude Code, Copilot, Cursor, etc.) operating in this project.
+These rules apply to any automated coding assistant operating in this project.
 
 ## Git — never automate
 

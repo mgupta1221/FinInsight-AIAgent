@@ -39,13 +39,33 @@ from finsight.tools.company_match import find_companies  # noqa: E402
 
 
 def run(question: str, session_id: str = "default", llm=None, memory: Memory | None = None,
-        use_model_wording: bool = True) -> AgentAnswer:
+        use_model_wording: bool = True, on_stage=None) -> AgentAnswer:
+    # NEW (22 Nov 2026): `on_stage`, an optional function the caller gives to be told what the agent is doing NOW.
+    # WHY: a question that needs the model several times takes 10 to 30 seconds, and the screen showed only
+    #      "Working on it...". The app passes a function that prints each stage as it starts (guard, planner,
+    #      executor steps, writer, critic). It is called with two texts: the stage name and one plain sentence.
+    #      It only reports; it decides nothing. With on_stage=None (the evaluation, the tests) nothing changes.
+    def tell(stage: str, message: str) -> None:
+        if on_stage is not None:
+            try:
+                on_stage(stage, message)
+            except Exception:  # noqa: BLE001  a display problem must never stop an answer
+                pass
     if llm is None:
         from finsight.agent.llm_adapter import RealLLM
         llm = RealLLM()
     memory = memory or Memory()
     question = clean_question(question)
-    trace: list[dict] = []
+    # OLD: trace: list[dict] = []
+    # CHANGED (22 Nov 2026): the same list, which also reports each executor step when it is added (see on_stage).
+    class _Trace(list):
+        def append(self, entry):  # noqa: ANN001
+            super().append(entry)
+            if isinstance(entry, dict) and "step" in entry and "do" in entry:
+                args = entry.get("args") or {}
+                about = " ".join(str(args[k]) for k in ("company", "fiscal_year") if args.get(k))
+                tell("executor", f"Step {entry['step']}: {str(entry['do']).replace('_', ' ')}" + (f" ({about})" if about else ""))
+    trace: list[dict] = _Trace()
 
     def done(a: AgentAnswer) -> AgentAnswer:
         a.trace, a.tokens_used = trace, llm.tokens
@@ -61,6 +81,7 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
     pending = memory.pop_pending(session_id)
 
     # 1. guard (code only, no tokens)
+    tell("guard", "Checking that the question is about the reports and is not a request for advice")
     refused = guard(question, trace)
     if refused:
         # NEW (18 Nov 2026): a year outside the corpus typed as the REPLY to my clarifying question does not
@@ -108,6 +129,7 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
         trace.append({"node": "planner", "note": "new summary topic, same company and year", "question": asked})
     try:
         # OLD: draft = planner.draft_plan(question, slots, llm)   ...   plan = planner.resolve(draft, question, slots)
+        tell("planner", "Working out the company, the year and what is asked")
         draft = planner.draft_plan(asked, slots, llm)
         trace.append({"node": "planner", "model_slots": draft.model_dump(exclude_none=True)})
         plan = planner.resolve(draft, asked, slots)
@@ -135,6 +157,7 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
     steps = planner.build_steps(plan)
 
     # 3. executor (tools)
+    tell("executor", f"Collecting the figures or passages from the reports ({len(steps)} step{'s' if len(steps) != 1 else ''})")
     runner = Run(plan, llm, trace)
     try:
         result = runner.execute(steps)
@@ -163,14 +186,18 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
     expected = writer.formula_for(plan, result) if plan.intent != "summary" else None      # 19 Nov 2026: + result
     verdict = None
     for attempt in range(MAX_REWRITES + 1):
+        tell("writer", "Writing the answer" + (f" again (attempt {attempt + 1})" if attempt else ""))
         try:
             if plan.intent == "summary":
-                ans = writer.write_summary(plan, result, llm)
+                # OLD: ans = writer.write_summary(plan, result, llm)
+                # NEW (21 Nov 2026): on a second or third attempt the writer is told why the last one was rejected.
+                ans = writer.write_summary(plan, result, llm, feedback="; ".join(verdict.reasons) if verdict and not verdict.ok else "")
             else:
                 ans = writer.write(plan, result, llm, use_model=use_model_wording and attempt < MAX_REWRITES)
         except Exception as e:  # noqa: BLE001
             trace.append({"node": "writer", "attempt": attempt + 1, "error": str(e)[:200]})
             continue
+        tell("critic", "Checking every number and citation against the pages")
         verdict = critic.review(ans, plan, result, expected_formula=expected)
         trace.append({"node": "critic", "attempt": attempt + 1, "ok": verdict.ok, "reasons": verdict.reasons})
         if verdict.ok:

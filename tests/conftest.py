@@ -97,3 +97,13 @@ def ask():
     def _ask(q, llm=None, mem=None, sid="t"):
         return run(q, session_id=sid, llm=llm or model(), memory=mem or Memory(":memory:"))
     return _ask
+
+
+# NEW (22 Nov 2026): every test gets its own, empty memory database.
+# WHY: the chat screen now stores each conversation (app/history.py) in settings.memory_db. Tests that start the
+#      chat screen would otherwise write their questions into the real store/memory.sqlite of the laptop, and
+#      conversations already stored there would show up inside the tests (an extra "Past conversations" box).
+@pytest.fixture(autouse=True)
+def _own_memory_file(tmp_path, monkeypatch):
+    from finsight.config import settings
+    monkeypatch.setattr(settings, "memory_db", str(tmp_path / "memory.sqlite"))

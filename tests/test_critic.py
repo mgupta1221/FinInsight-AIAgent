@@ -51,7 +51,23 @@ def test_rejects_wrong_formula():
 def test_summary_must_cite_retrieved_pages():
     plan = AgentPlan(intent="summary", companies=["ITC"], fiscal_years=["2025-26"], topic="risks")
     result = {"passages": [{"citation": "ITC-FY2526-p110"}]}
-    pts = [KeyPoint(point=f"risk {i}", citation="ITC-FY2526-p110") for i in range(3)]
+    pts = [KeyPoint(point=f"Risk number {i} is described here in one full sentence of words", citation="ITC-FY2526-p110") for i in range(3)]
     assert review(AgentAnswer(status="answered", answer="Three risks.", key_points=pts), plan, result).ok
     bad = [KeyPoint(point="risk", citation="ITC-FY2526-p999")] * 3
     assert not review(AgentAnswer(status="answered", answer="Three risks.", key_points=bad), plan, result).ok
+
+
+def test_a_strategy_summary_may_report_the_companys_plans_but_not_give_advice():
+    """Added 21 Nov 2026: summary-004 was rejected three times because the company's own plans read as a forecast."""
+    plan = AgentPlan(intent="summary", companies=["HINDUNILVR"], fiscal_years=["2025-26"], topic="strategic priorities")
+    result = {"passages": [{"citation": "HINDUNILVR-FY2526-p44"}]}
+    def pts(*texts):
+        return [KeyPoint(point=t, citation="HINDUNILVR-FY2526-p44") for t in texts]
+    plans = pts("The company will invest up to Rs 2,000 crore to expand capacity in premium categories over two years.",
+                "Volume-led growth is expected to continue as the company builds modern, youthful brands across its portfolio.",
+                "The outlook is for sustained demand, and the company will increase spending on social-first marketing.")
+    assert review(AgentAnswer(status="answered", answer="Three priorities.", key_points=plans), plan, result).ok
+    advice = pts("Investors should buy the stock because the company will invest in premium categories next year.",
+                 "Volume-led growth is expected to continue as the company builds modern, youthful brands across its portfolio.",
+                 "The outlook is for sustained demand, and the company will increase spending on social-first marketing.")
+    assert not review(AgentAnswer(status="answered", answer="Three priorities.", key_points=advice), plan, result).ok

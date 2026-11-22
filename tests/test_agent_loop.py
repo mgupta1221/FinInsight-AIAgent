@@ -10,6 +10,11 @@ from finsight.agent.memory import Memory
 Q_REV = "What was Infosys' consolidated revenue from operations in FY2025-26?"
 
 
+# 21 Nov 2026: key points are full sentences now (the critic rejects labels of fewer than eight words).
+RISK_POINTS = ("Cyber risk is growing with digital adoption and is managed by a security operations centre.",
+               "Commodity risk comes from volatile input prices and is managed through hedging and long contracts.",
+               "Regulatory risk arises from changing packaging rules, which the company tracks and complies with.")
+
 def test_refusal_needs_no_model_call(ask):
     llm = model()
     a = ask("Should I buy TCS shares?", llm)
@@ -102,7 +107,7 @@ def test_reported_ratio_is_verified_against_the_page(fake_search, ask):
 
 def test_summary_sanitises_and_checks_citations(fake_search, ask):
     good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "[ITC-FY2526-p110]"}
-            for p in ("Cyber security risk", "Commodity price risk", "Regulatory risk")]}
+            for p in RISK_POINTS]}
     a = ask("Summarise the top risks ITC lists in its FY2025-26 report.", model(summary=good))
     assert a.status == "answered" and a.verified and any("sanitiser" in t.get("note", "") for t in a.trace)
     bad = {**good, "key_points": [{**k, "citation": "ITC-FY2526-p999"} for k in good["key_points"]]}
@@ -172,7 +177,8 @@ def test_summary_without_a_topic_asks_which_part(fake_search, ask):
     for q in ("can you summarize annual report for HUL in hundred words", "Summarise the ITC FY2025-26 annual report", "Give me a brief summary of ITC"):
         a = ask(q)
         assert a.status == "clarify" and "Which part" in a.clarifying_question, q
-    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in ("Cyber risk", "Commodity risk", "Regulatory risk")]}
+        assert a.clarifying_question.startswith("Which part") and "too long" not in a.clarifying_question   # 22 Nov 2026: asks directly
+    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in RISK_POINTS]}
     assert ask("Summarise the top risks ITC lists in its FY2025-26 report.", model(summary=good)).status == "answered"
 
 
@@ -181,7 +187,7 @@ def test_reply_to_a_clarifying_question_completes_it(figure_store, fake_search, 
     """Real run: 'summarize annual report for HUL' -> 'key risks' -> 'HUL' -> 'net profit' asked for the company
     every time, because nothing was kept after a clarifying question."""
     mem = Memory(":memory:")
-    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in ("Cyber risk", "Commodity risk", "Regulatory risk")]}
+    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in RISK_POINTS]}
     a = ask("can you summarize annual report for ITC in hundred words", mem=mem)
     assert a.status == "clarify" and "Which part" in a.clarifying_question
     a = ask("key risks", mem=mem)                                                 # topic given; company is remembered
@@ -252,17 +258,24 @@ def test_summary_topic_is_widened_and_pages_are_not_repeated(monkeypatch, ask):
 
     def search(query, company=None, fiscal_year=None, top_k=5, **_):
         seen.update(query=query, top_k=top_k)
-        pages = [86, 86, 86, 10, 41, 47, 11]                                      # the same page three times, then others
+        # OLD: pages = [86, 86, 86, 10, 41, 47, 11, 12, 13, 14]
+        # CHANGED (21 Nov 2026, third time): a group now counts by the rank of its passages, so the group 10 to 14
+        # must also hold the best-ranked passage to be taken as the section. Page 10 is moved to the front.
+        pages = [10, 86, 86, 86, 41, 47, 11, 12, 13, 14]
         return [{"page": p, "citation": f"HINDUNILVR-FY2526-p{p}", "score": 1.0, "text": f"[hdr]\nText of page {p}."} for p in pages]
     monkeypatch.setattr(ex, "search_report", search)
-    good = {"answer": "Three points.", "key_points": [{"point": f"Point {p}", "citation": f"HINDUNILVR-FY2526-p{p}"} for p in (86, 10, 41)]}
+    good = {"answer": "Three points.", "key_points": [{"point": f"Point {p} says something specific about the business in one full sentence", "citation": f"HINDUNILVR-FY2526-p{p}"} for p in (86, 10, 11)]}
     a = ask("Summarise the business performance of HUL in FY2025-26", model(summary=good))
     assert a.status == "answered"
     assert "revenue growth" in seen["query"] and "business performance" in seen["query"].lower()
     used = [t for t in a.trace if t.get("tool") == "search_report"][0]["result"]
-    assert len(used) == 7                                                         # what the search returned ...
-    bad = {"answer": "x", "key_points": [{"point": "p", "citation": "HINDUNILVR-FY2526-p11"}] * 3}
-    assert ask("Summarise the business performance of HUL in FY2025-26", model(summary=bad)).status == "escalated"   # ... p11 was 5th page: not passed on
+    assert len(used) == 10                                                        # what the search returned ...
+    # CHANGED twice on 21 Nov 2026. Now: pages 10 to 14 lie together and are taken as the section (5 passages); fewer
+    # than six, so one more is added from elsewhere (86) and the selection stops at six. Pages 41 and 47 are not passed on.
+    bad = {"answer": "x", "key_points": [{"point": "This point says something specific about the business in one sentence", "citation": "HINDUNILVR-FY2526-p47"}] * 3}
+    assert ask("Summarise the business performance of HUL in FY2025-26", model(summary=bad)).status == "escalated"
+    ok11 = {"answer": "x", "key_points": [{"point": f"Point {i} says something specific about the business in one full sentence", "citation": "HINDUNILVR-FY2526-p11"} for i in range(3)]}
+    assert ask("Summarise the business performance of HUL in FY2025-26", model(summary=ok11)).status == "answered"
 
 
 def test_summary_prefers_the_sections_where_the_topic_is_discussed(monkeypatch, ask):
@@ -277,10 +290,13 @@ def test_summary_prefers_the_sections_where_the_topic_is_discussed(monkeypatch, 
     from finsight.schemas import AgentPlan
     r = Run(AgentPlan(intent="summary", companies=["ITC"], fiscal_years=["2025-26"], topic="strategy and outlook"), None, [])
     r.summarise("ITC", "2025-26", "strategy and outlook")
-    assert [p["page"] for p in r.result["passages"]] == [5, 75, 139, 223]           # preferred sections first, then the rest
+    assert [p["page"] for p in r.result["passages"]] == [5, 75, 139, 223, 86, 300]  # preferred sections first, then the rest (21 Nov 2026: up to 8)
     r = Run(AgentPlan(intent="summary", companies=["ITC"], fiscal_years=["2025-26"], topic="employee wellbeing"), None, [])
     r.summarise("ITC", "2025-26", "employee wellbeing")
-    assert [p["page"] for p in r.result["passages"]] == [223, 86, 5, 75]            # unknown topic: search order is kept
+    assert [p["page"] for p in r.result["passages"]] == [223, 86, 5, 75, 139, 300]  # unknown topic: search order is kept
+    r = Run(AgentPlan(intent="summary", companies=["ITC"], fiscal_years=["2025-26"], topic="strategic priorities in its MD&A"), None, [])
+    r.summarise("ITC", "2025-26", "strategic priorities in its MD&A")
+    assert [p["page"] for p in r.result["passages"]][:3] == [75, 139, 5]            # asked "in its MD&A": MD&A and directors' report first
 
 
 def test_unusable_reply_keeps_the_unfinished_question(figure_store, fake_search, ask):
@@ -288,7 +304,7 @@ def test_unusable_reply_keeps_the_unfinished_question(figure_store, fake_search,
     mistyped, refused, and the corrected year was attached to the OLD deposits question."""
     mem = Memory(":memory:")
     ask(Q_REV, mem=mem)                                                           # an earlier, answered question
-    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in ("Cyber risk", "Commodity risk", "Regulatory risk")]}
+    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in RISK_POINTS]}
     assert ask("can you summarize annual report for ITC in hundred words", mem=mem).status == "clarify"
     assert "fiscal year" in ask("key risks", mem=mem).clarifying_question
     a = ask("FY2022-23", mem=mem)                                                 # a year that is not covered
@@ -300,7 +316,7 @@ def test_unusable_reply_keeps_the_unfinished_question(figure_store, fake_search,
 def test_a_bare_year_after_a_summary_repeats_the_summary(figure_store, fake_search, ask):
     """Real run, 18 Nov 2026: after an answered summary, "FY23-24" got "Which figure or ratio would you like?"."""
     mem = Memory(":memory:")
-    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in ("Cyber risk", "Commodity risk", "Regulatory risk")]}
+    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in RISK_POINTS]}
     assert ask("Summarise the key risks of ITC in FY2025-26", model(summary=good), mem=mem).status == "answered"
     a = ask("FY23-24", mem=mem)                                                   # no FY2023-24 report: refused, not a figure question
     assert a.status == "refused" and a.refusal_reason == "not_in_corpus"
@@ -313,7 +329,7 @@ def test_a_bare_year_after_a_summary_repeats_the_summary(figure_store, fake_sear
 def test_a_bare_topic_after_a_summary_keeps_the_company_and_year(figure_store, fake_search, ask):
     """Real run, 18 Nov 2026: after a summary for one company and year, "key risks" should be about the same ones."""
     mem = Memory(":memory:")
-    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in ("Cyber risk", "Commodity risk", "Regulatory risk")]}
+    good = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in RISK_POINTS]}
     assert ask("Summarise the strategy and outlook of ITC in FY2025-26", model(summary=good), mem=mem).status == "answered"
     a = ask("key risks", model(summary=good), mem=mem)
     assert a.status == "answered" and a.intent == "summary" and a.companies == ["ITC"] and a.fiscal_years == ["2025-26"]
@@ -553,3 +569,193 @@ def test_a_complete_question_does_not_inherit_the_previous_scope():
     assert planner.resolve(AgentPlan(intent="other"), "And for Nestle India?", mem).scope == "standalone"   # a real follow-up keeps it
     mem["scope"] = "consolidated"
     assert planner.resolve(AgentPlan(intent="other"), "And for Nestle India?", mem).scope == "consolidated"
+
+
+# ---- added 21 Nov 2026: found by the first evaluation run (scripted model) ----
+
+def test_unknown_company_is_refused_without_the_model_and_two_scopes_are_asked_about(figure_store, ask):
+    a = ask("What was Reliance Industries' revenue in FY2025-26?")                 # the scripted model names no company
+    assert a.status == "refused" and a.refusal_reason == "not_in_corpus" and "Reliance Industries" in a.answer
+    assert ask("What was Infosys' consolidated revenue from operations in FY2025-26?").status == "answered"    # a known name is not caught
+    assert ask("What was State Bank of India's net profit in FY2025-26?").status == "answered"
+    a = ask("For Infosys revenue in FY2025-26, do you want standalone or consolidated?")
+    assert a.status == "clarify" and "standalone or the consolidated" in a.clarifying_question
+    mem = Memory(":memory:")
+    assert ask("For Infosys revenue in FY2025-26, do you want standalone or consolidated?", mem=mem).status == "clarify"
+    a = ask("consolidated", mem=mem)                                              # the reply settles it
+    assert a.status == "answered" and a.scope == "consolidated" and a.value == 1000.0
+
+
+# ---- added 21 Nov 2026: from the first evaluation run on the real model (79 of 90) ----
+
+def test_total_column_is_used_when_the_question_asks_about_a_total(figure_store, monkeypatch, ask):
+    """multihop-003: both numbers were taken from the "External" column (29.93%); gold uses "Total" (26.69%)."""
+    _segment_search(monkeypatch)
+    external = {"found": True, "numerator_label": "FMCG - Others", "numerator_quote": "24203.75",
+                "denominator_label": "Segment Total", "denominator_quote": "80867.49", "citation": "ITC-FY2526-p217"}
+    a = ask(Q_SHARE, model(parts=external))                                        # "... share of ITC's TOTAL segment revenue ..."
+    assert a.status == "answered" and round(a.value, 2) == 26.69 and [f.value for f in a.inputs] == [24209.75, 90713.20]
+    a = ask("What share of ITC's external segment revenue came from the FMCG-Others segment in FY2025-26?", model(parts=external))
+    assert a.status == "answered" and round(a.value, 2) == 29.93                   # no "total" in the question: the model's column stands
+
+
+def test_the_models_metric_must_be_named_in_the_question(figure_store, monkeypatch, ask):
+    """multihop-006: the model chose gross_npa_ratio for a question about restructured advances."""
+    from finsight.agent import planner
+    from finsight.schemas import AgentPlan
+    q = "What were State Bank of India's restructured advances as a percentage of gross advances in FY2025-26?"
+    plan = planner.resolve(AgentPlan(intent="ratio", metric="gross_npa_ratio"), q, {})
+    assert plan.metric == planner.TEXT_RATIO
+    assert planner.resolve(AgentPlan(intent="ratio", metric="gross_npa_ratio"), "What was SBI's GNPA ratio in FY2025-26?", {}).metric == "gross_npa_ratio"
+    assert planner.resolve(AgentPlan(intent="other"), "What was SBI's gross NPA ratio in FY2025-26?", {}).metric == "gross_npa_ratio"
+
+
+def test_reported_ratio_prefers_pages_labelled_with_the_asked_scope(figure_store, monkeypatch, ask):
+    """ratio-015: Kotak prints 4.60% for the bank and 4.63% for the group; the standalone question got 4.63%."""
+    import finsight.agent.executor as ex
+    group = {"page": 277, "citation": "KOTAKBANK-FY2526-p277", "score": 1.0,
+             "text": "[Kotak Mahindra Bank | FY2025-26 |  | governance | p277]\nKey Ratios Net Interest Margin (NIM) 4.63% 4.97% Return on Assets 2.06%"}
+    bank = {"page": 190, "citation": "KOTAKBANK-FY2526-p190", "score": 0.5,
+            "text": "[Kotak Mahindra Bank | FY2025-26 | standalone | notes | p190]\nCost of deposits 4.60% 5.10% Net Interest Margin (E) 4.60% 4.96%"}
+    shown = []
+
+    def search(query, company=None, fiscal_year=None, top_k=5, scope=None, **_):
+        return [dict(bank)] if scope == "standalone" else [dict(group)]
+    monkeypatch.setattr(ex, "search_report", search)
+
+    def responder(schema, system, user):
+        if schema == "Extracted":
+            shown.append(user)
+            return {"found": True, "value": 4.6, "quote": "4.60%", "citation": "KOTAKBANK-FY2526-p190"} if "p190" in user else \
+                   {"found": True, "value": 4.63, "quote": "4.63%", "citation": "KOTAKBANK-FY2526-p277"}
+        return {"intent": "other"} if schema == "AgentPlan" else {"answer": user.replace("Facts: ", "")}
+    from conftest import FakeLLM
+    a = ask("What was Kotak Mahindra Bank's net interest margin (NIM) in FY2025-26?", FakeLLM(responder))
+    assert a.status == "answered" and a.value == 4.6 and a.citations == ["KOTAKBANK-FY2526-p190"]
+    assert "p277" not in shown[0]                                                  # the group's page was not shown to the model
+
+
+# ---- added 21 Nov 2026: from the second practice run on the real model ----
+
+def test_an_amount_is_not_accepted_as_a_percentage_and_the_model_is_asked_again(figure_store, monkeypatch, ask):
+    """compare-004: "CASA deposits 7,435.88 billion" was returned as ICICI Bank's CASA ratio (7435.88%)."""
+    import finsight.agent.executor as ex
+    from conftest import FakeLLM
+    amounts = {"page": 116, "citation": "ICICIBANK-FY2526-p116", "score": 1.0,
+               "text": "[ICICI Bank | FY2025-26 |  | mdna | p116]\nCASA deposits increased to 7,435.88 billion at March 31, 2026."}
+    ratio = {"page": 12, "citation": "ICICIBANK-FY2526-p12", "score": 0.9,
+             "text": "[ICICI Bank | FY2025-26 |  | overview | p12]\nThe period-end CASA ratio was 38.4% at March 31, 2026."}
+    monkeypatch.setattr(ex, "search_report", lambda query, company=None, fiscal_year=None, top_k=5, scope=None, **_:
+                        [] if scope else [dict(amounts), dict(ratio)])
+    asked = []
+
+    def responder(schema, system, user):
+        if schema == "Extracted":
+            asked.append(user)
+            return {"found": True, "value": 7435.88, "quote": "7,435.88", "citation": "ICICIBANK-FY2526-p116"} if "p116" in user else \
+                   {"found": True, "value": 38.4, "quote": "38.4%", "citation": "ICICIBANK-FY2526-p12"}
+        return {"intent": "other"} if schema == "AgentPlan" else {"answer": user.replace("Facts: ", "")}
+    a = ask("What was ICICI Bank's CASA ratio in FY2025-26?", FakeLLM(responder))
+    assert a.status == "answered" and a.value == 38.4 and a.citations == ["ICICIBANK-FY2526-p12"]
+    assert len(asked) == 2 and asked[0].index("p12") < asked[0].index("p116") and "p116" not in asked[1]   # the page with a percentage first; the rejected page set aside
+
+    always_amount = lambda schema, system, user: ({"found": True, "value": 7435.88, "quote": "7,435.88", "citation": "ICICIBANK-FY2526-p116"} if schema == "Extracted"   # noqa: E731
+                                                  else {"intent": "other"} if schema == "AgentPlan" else {"answer": user})
+    monkeypatch.setattr(ex, "search_report", lambda query, company=None, fiscal_year=None, top_k=5, scope=None, **_: [] if scope else [dict(amounts)])
+    a = ask("What was ICICI Bank's CASA ratio in FY2025-26?", FakeLLM(always_amount))
+    assert a.status == "escalated" and a.value is None                              # never "7435.88%"
+
+
+def test_summary_key_points_must_be_sentences(fake_search, ask):
+    """Second practice run: the model answered with labels such as "Cybersecurity risks"."""
+    labels = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in ("Cyber risk", "Commodity risk", "Regulatory risk")]}
+    a = ask("Summarise the top risks ITC lists in its FY2025-26 report.", model(summary=labels))
+    assert a.status == "escalated" and "label" in a.answer
+    full = {"answer": "ITC lists three risks.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in RISK_POINTS]}
+    assert ask("Summarise the top risks ITC lists in its FY2025-26 report.", model(summary=full)).status == "answered"
+
+
+# ---- added 21 Nov 2026: from the fourth practice run (summaries) ----
+
+def test_summary_reads_the_section_and_gets_an_instruction_for_its_topic(monkeypatch):
+    """SBI: the risk section is pages 115 to 119; single pages of the sustainability report took half the summary."""
+    import finsight.agent.executor as ex
+    from finsight.agent.executor import Run
+    from finsight.agent import writer
+    from finsight.schemas import AgentPlan
+    order = [468, 116, 473, 118, 115, 481, 118, 117, 119, 116, 475, 115]             # search order: scattered pages rank high
+
+    def search(query, company=None, fiscal_year=None, top_k=5, **_):
+        return [{"page": p, "section": "risk", "citation": f"SBIN-FY2526-p{p}", "score": 1.0, "text": f"[hdr]\nText {i} of page {p}."} for i, p in enumerate(order)]
+    monkeypatch.setattr(ex, "search_report", search)
+    plan = AgentPlan(intent="summary", companies=["SBIN"], fiscal_years=["2025-26"], topic="key risk disclosures")
+    r = Run(plan, None, [])
+    r.summarise("SBIN", "2025-26", "key risk disclosures")
+    pages = [p["page"] for p in r.result["passages"]]
+    assert pages == [116, 118, 115, 118, 117, 119, 116, 115] and not set(pages) & {468, 473, 475, 481}   # the section only: it gave six or more
+    assert "risks themselves" in r.result["focus"]
+    seen = {}
+
+    class Spy:
+        tokens = 0
+
+        def json(self, system, user, schema, max_tokens=0):
+            seen["user"] = user
+            return schema(answer="x", key_points=[])
+    writer.write_summary(plan, r.result, Spy())
+    assert "What the key points must be: List the risks themselves" in seen["user"] and seen["user"].index("What the key points") < seen["user"].index("[SBIN-FY2526-p116]")
+    r2 = Run(AgentPlan(intent="summary", companies=["SBIN"], fiscal_years=["2025-26"], topic="strategic priorities"), None, [])
+    r2.summarise("SBIN", "2025-26", "strategic priorities")
+    assert "not priorities" in r2.result["focus"]
+
+
+def test_a_group_the_search_ranks_first_beats_a_larger_group_further_down(monkeypatch):
+    """Nestle, summaries2 run: pages 228-231 (many passages, ranked low) were taken as the risk section."""
+    import finsight.agent.executor as ex
+    from finsight.agent.executor import Run
+    from finsight.schemas import AgentPlan
+    # OLD: order = [41, 42, 41, 228, 230, 231, 228, 230, 229, 231, 228]
+    # CHANGED the same day: rank now counts as 1/sqrt(rank), so the lower group may be only a little larger.
+    order = [41, 42, 41, 228, 230, 231, 228]                                        # the best-ranked pages, then a slightly larger group
+
+    def search(query, company=None, fiscal_year=None, top_k=5, **_):
+        return [{"page": p, "section": "directors_report", "citation": f"NESTLEIND-FY2526-p{p}", "score": 1.0, "text": f"[hdr]\nText {i} of page {p}."} for i, p in enumerate(order)]
+    monkeypatch.setattr(ex, "search_report", search)
+    r = Run(AgentPlan(intent="summary", companies=["NESTLEIND"], fiscal_years=["2025-26"], topic="main business risks"), None, [])
+    r.summarise("NESTLEIND", "2025-26", "main business risks")
+    assert [p["page"] for p in r.result["passages"]][:3] == [41, 42, 41]
+
+
+def test_a_section_with_many_passages_is_not_beaten_by_a_few_at_the_top(monkeypatch):
+    """HDFC Bank, summaries3 run: pages 110-112 (ranks 1, 2, 5) beat the risk section 101-107 (twelve passages)."""
+    import finsight.agent.executor as ex
+    from finsight.agent.executor import Run
+    from finsight.schemas import AgentPlan
+    order = [112, 111, 101, 105, 110, 107, 104, 102, 144, 276, 103, 102, 103, 102, 104, 147, 274, 144, 106, 101]
+
+    def search(query, company=None, fiscal_year=None, top_k=5, **_):
+        return [{"page": p, "section": "risk", "citation": f"HDFCBANK-FY2526-p{p}", "score": 1.0, "text": f"[hdr]\nText {i} of page {p}."} for i, p in enumerate(order)]
+    monkeypatch.setattr(ex, "search_report", search)
+    r = Run(AgentPlan(intent="summary", companies=["HDFCBANK"], fiscal_years=["2025-26"], topic="principal risks"), None, [])
+    r.summarise("HDFCBANK", "2025-26", "principal risks")
+    pages = [p["page"] for p in r.result["passages"]]
+    assert all(101 <= p <= 107 for p in pages) and {103, 104, 105} <= set(pages)
+
+
+def test_the_agent_reports_each_stage_as_it_starts(figure_store):
+    """Added 22 Nov 2026: the app shows what the agent is doing while it works."""
+    from finsight.agent.graph import run
+    seen = []
+    a = run("What was Infosys' consolidated net profit in FY2025-26?", session_id="t", llm=model(), memory=Memory(":memory:"),
+            on_stage=lambda stage, message: seen.append(stage))
+    assert a.status == "answered" and a.value == 180.0
+    assert [s for i, s in enumerate(seen) if i == 0 or s != seen[i - 1]] == ["guard", "planner", "executor", "writer", "critic"]
+    seen.clear()
+    assert run("Should I buy TCS shares?", session_id="t", llm=model(), memory=Memory(":memory:"),
+               on_stage=lambda stage, message: seen.append(stage)).status == "refused"
+    assert seen == ["guard"]                                                      # refused by the guard: nothing else runs
+
+    def broken(stage, message):
+        raise RuntimeError("the screen is gone")
+    b = run("What was Infosys' consolidated net profit in FY2025-26?", session_id="t", llm=model(), memory=Memory(":memory:"), on_stage=broken)
+    assert b.status == "answered" and b.value == 180.0                            # a display problem never stops an answer
