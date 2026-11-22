@@ -16,7 +16,7 @@ Last updated: 15 Nov 2026\.
 | Unit tests on Python 3.11.17 | **114 passed** (before any change: 22 passed, 3 skipped placeholders) |
 | Figure store coverage | 793 of 940 standard figures found with a confirmed unit (was 469). |
 | Agent with the real Qwen3-8B endpoint, in this repo | Verified : fact, follow-up, ratio (14 Nov) and a reported ratio, HDFC Bank CASA 34.80%, p210 (15 Nov) |
-| Agent on the real figure store with a scripted (fake) model | Fact, follow-up, ratio, year-on-year, comparison, bank ratio, refusal and clarify all correct |
+| Agent on the real figure store with a scripted model | Fact, follow-up, ratio, year-on-year, comparison, bank ratio, refusal and clarify all correct |
 | Summary and reported-ratio questions | Work with keyword search after `python -m ingest.run_ingest --no-index` (27,696 chunks). The vector index is not built yet |
 | Chat screen (Streamlit) with the agent | Tested without a browser (Streamlit AppTest, scripted model). Not yet opened in a browser with the real endpoint |
 
