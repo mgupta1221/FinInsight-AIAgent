@@ -345,3 +345,69 @@ def test_each_key_point_and_each_source_is_its_own_link():
     table = figures_table(two, link)
     assert "[FY2025-26 report, page 168](https://example.org/TCS-FY2526.pdf#page=168)" in table      # each row opens its own page
     assert "[FY2025-26 report, page 170](https://example.org/TCS-FY2526.pdf#page=170)" in table
+
+
+# ---- added 22 Nov 2026: follow-up suggestions and scrolling ----
+def test_follow_up_suggestions_are_built_by_code_from_the_answer():
+    import suggest
+    fig = Figure(name="net_profit", company="INFY", fiscal_year="2025-26", value=180.0, unit="crore", page=287, citation="INFY-FY2526-p287")
+    fact = AgentAnswer(status="answered", intent="fact", verified=True, companies=["INFY"], fiscal_years=["2025-26"], scope="consolidated", inputs=[fig])
+    got = suggest.suggestions(fact)
+    assert got[0] == ("Same for FY2024-25", "What was Infosys's consolidated net profit in FY2024-25?")
+    assert got[1] == ("Change from FY2024-25 to FY2025-26", "How did Infosys's consolidated net profit change from FY2024-25 to FY2025-26?")
+    assert ("Revenue from operations", "What was Infosys's consolidated revenue from operations in FY2025-26?") in got
+    assert all(text != "Net profit" for text, _ in got) and 2 <= len(got) <= 4       # the figure just answered is not offered again
+    ratio = AgentAnswer(status="answered", intent="ratio", metric="operating_margin", companies=["TCS"], fiscal_years=["2024-25"], scope="consolidated")
+    texts = [t for t, _ in suggest.suggestions(ratio)]
+    assert texts[0] == "Same for FY2025-26" and not any(t.startswith("Change") for t in texts)   # no "change" for a ratio
+    bank = AgentAnswer(status="answered", intent="ratio", metric="casa_ratio", companies=["HDFCBANK"], fiscal_years=["2025-26"], scope="standalone")
+    got = suggest.suggestions(bank)
+    assert got[0][1] == "What was HDFC Bank's CASA ratio in FY2024-25?"               # no scope word: banks state it standalone only
+    assert {"Net profit", "Deposits"} <= {t for t, _ in got} and "Operating margin" not in {t for t, _ in got}
+    summ = AgentAnswer(status="answered", intent="summary", companies=["ITC"], fiscal_years=["2025-26"])
+    got = suggest.suggestions(summ, "Summarise the top risks ITC lists in its FY2025-26 report.")
+    assert [t for t, _ in got] == ["Business performance", "Strategy and outlook", "Management commentary"]
+    assert got[0][1] == "Summarise the business performance of ITC in FY2025-26."
+    for none in (AgentAnswer(status="refused", answer="no"), AgentAnswer(status="clarify", clarifying_question="Which company?"),
+                 AgentAnswer(status="answered", intent="compare", companies=["TCS", "INFY"], fiscal_years=["2025-26"])):
+        assert suggest.suggestions(none) == []
+
+
+def test_every_suggested_question_is_understood_by_the_planner(figure_store, fake_search, ask):
+    """A suggestion must never lead to a refusal or to "which company?": it is a complete question."""
+    import suggest
+    fig = Figure(name="net_profit", company="INFY", fiscal_year="2025-26", value=180.0, unit="crore", page=287, citation="INFY-FY2526-p287")
+    fact = AgentAnswer(status="answered", intent="fact", verified=True, companies=["INFY"], fiscal_years=["2025-26"], scope="consolidated", inputs=[fig])
+    for _, q in suggest.suggestions(fact):
+        a = ask(q)
+        assert a.status in ("answered", "escalated") and a.companies == ["INFY"], (q, a.status, a.answer)   # escalated = figure not in the small test store
+    good = {"answer": "ITC points.", "key_points": [{"point": p, "citation": "ITC-FY2526-p110"} for p in
+            ("The company grew revenue in every segment during the year under review", "Margins held despite higher input costs across categories",
+             "Capital spending continued on new capacity for the foods business")]}
+    summ = AgentAnswer(status="answered", intent="summary", companies=["ITC"], fiscal_years=["2025-26"])
+    for _, q in suggest.suggestions(summ, "Summarise the top risks ITC lists in its FY2025-26 report."):
+        a = ask(q, model(summary=good))
+        assert a.status == "answered" and a.intent == "summary" and a.companies == ["ITC"], (q, a.status, a.answer)
+
+
+def test_a_clicked_suggestion_is_asked_like_a_typed_question(figure_store, monkeypatch):
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+    import finsight.agent.graph as graph
+    real_run, seen = graph.run, []
+
+    def scripted_run(question, session_id="default", **_):
+        seen.append(question)
+        return real_run(question, session_id=session_id, llm=model(), memory=Memory(":memory:"))
+    monkeypatch.setattr(graph, "run", scripted_run)
+    at = AppTest.from_file(str(APP / "streamlit_app.py"), default_timeout=30).run()
+    at.chat_input[0].set_value("What was Infosys' consolidated net profit in FY2025-26?").run()
+    assert not at.exception
+    buttons = [b for b in at.button if (b.key or "").startswith("suggest_")]
+    assert buttons and buttons[0].label == "Same for FY2024-25"
+    assert any(m.value == "**Explore further**" for m in at.markdown)              # 22 Nov 2026: the heading of the suggestions box
+    buttons[0].click().run()
+    assert not at.exception and seen[-1] == "What was Infosys's consolidated net profit in FY2024-25?"
+    assert len(seen) == 2 and any(m.value == seen[-1] for m in at.markdown)        # asked once, and shown as the user's question
+    newest = [b for b in at.button if (b.key or "").startswith("suggest_")]
+    assert all(b.key != buttons[0].key for b in newest)                            # the earlier answer no longer carries suggestions

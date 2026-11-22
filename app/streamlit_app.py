@@ -41,6 +41,7 @@ from finsight.tools.get_company_profile import _load as load_companies  # noqa: 
 import uuid  # noqa: E402
 
 from components import render_agent_answer, answer_markdown  # noqa: E402  (app/components.py)
+from components import scroll_to_latest, suggestion_buttons  # noqa: E402  (22 Nov 2026: follow-up suggestions, scrolling)
 from components import note_controls  # noqa: E402  (22 Nov 2026: DRAFT note and Approve, SPEC section 8)
 import lookups  # noqa: E402  (app/lookups.py, 19 Nov 2026: the Quick lookup pickers)
 import history as chat_history  # noqa: E402  (app/history.py, 22 Nov 2026: past conversations)
@@ -211,6 +212,10 @@ for turn_no, turn in enumerate(st.session_state.history):
             render_agent_answer(st, turn["agent"])
             note_controls(st, turn["agent"], st.session_state.history[turn_no - 1]["content"] if turn_no else "Note",
                           f"{st.session_state.session_id}_{turn_no}")
+            # NEW (22 Nov 2026): follow-up suggestions, under the newest answer only (older ones would clutter the page).
+            if turn_no == len(st.session_state.history) - 1 and not st.session_state.get("suggested_question"):
+                suggestion_buttons(st, turn["agent"], st.session_state.history[turn_no - 1]["content"] if turn_no else "",
+                                   f"{st.session_state.session_id}_{turn_no}")
         else:
             st.markdown(turn["content"])
 
@@ -223,7 +228,11 @@ from_lookup = None
 if lk_go and lk_ready:
     lk_years = ["2024-25", "2025-26"] if lk_year.startswith("Change") else [lk_year]
     from_lookup = lookups.build_question(lk_names, lk_pick[0], lk_years, lk_scope, lk_order)
-question = typed or from_lookup
+# OLD: question = typed or from_lookup
+# CHANGED (22 Nov 2026): a clicked follow-up suggestion is a third way to ask. Like a Quick lookup question it is
+# already complete, so the optional sidebar filters are not added to it.
+from_suggestion = st.session_state.pop("suggested_question", None)
+question = typed or from_lookup or from_suggestion
 if question:
     st.session_state.history.append({"role": "user", "content": question})
     # NEW (22 Nov 2026): every turn is also stored for "Past conversations". A failure to store never stops the chat.
@@ -236,6 +245,7 @@ if question:
     remember("user", mask_pii(question))
     with st.chat_message("user"):
         st.markdown(question)
+    scroll_to_latest(st, len(st.session_state.history), back=1)      # 22 Nov 2026: show the question while the agent works
 
     # OLD (kept; this block ran for every question before 15 Nov 2026 and still runs in "Simple search" mode):
     #     with st.chat_message("assistant"):
@@ -278,7 +288,8 @@ if question:
             show_stage("agent", "Starting")
             try:
                 # NEW (19 Nov 2026): a Quick lookup question is already complete, so the optional filters are not added to it.
-                agent_answer = run_agent(question if from_lookup and not typed else with_filters(question),
+                # OLD: agent_answer = run_agent(question if from_lookup and not typed else with_filters(question), ...
+                agent_answer = run_agent(question if (from_lookup or from_suggestion) and not typed else with_filters(question),
                                          session_id=st.session_state.session_id, on_stage=show_stage)
             except Exception as e:  # noqa: BLE001  (endpoint down, wrong key, missing figure store ...)
                 agent_answer = None
@@ -289,6 +300,7 @@ if question:
                 # NEW (22 Nov 2026): same controls and same key as in the history loop above, where this answer is
                 # drawn from the next click on.
                 note_controls(st, agent_answer, question, f"{st.session_state.session_id}_{len(st.session_state.history)}")
+                suggestion_buttons(st, agent_answer, question, f"{st.session_state.session_id}_{len(st.session_state.history)}")   # 22 Nov 2026
                 reply = answer_markdown(agent_answer)
             else:
                 st.error(reply)
@@ -310,3 +322,4 @@ if question:
     st.session_state.history.append({"role": "assistant", "content": reply,
                                      "agent": agent_answer if use_agent else None})     # see the note above the history loop
     remember("assistant", reply, agent_answer if use_agent else None)                  # 22 Nov 2026: past conversations
+    scroll_to_latest(st, len(st.session_state.history), back=2)      # 22 Nov 2026: the question at the top, its answer below
