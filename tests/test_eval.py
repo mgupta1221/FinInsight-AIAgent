@@ -287,3 +287,20 @@ def test_a_free_text_answer_that_declines_names_no_winner():
     assert s("TCS had the highest operating margin in FY2025-26.")["correct"]
     assert s("TCS leads, followed by Infosys and Wipro. However, exact figures are not provided here.")["correct"]   # a winner is named first
     assert not s("Infosys had the highest operating margin.")["correct"]
+
+
+def test_a_run_checks_the_vector_search_before_the_first_question(tmp_path, evalset, capsys):
+    """Real run, 22 Nov 2026: Qdrant was not running; the run went on with keyword search and summaries dropped."""
+    ask, asked = _fake_agent({})
+    kw = dict(eval_set=evalset, ask=ask, practice_dir=tmp_path / "runs", official_dir=tmp_path / "official")
+    down = lambda: (False, "connection refused")   # noqa: E731
+    with pytest.raises(SystemExit, match="official run needs the vector search"):
+        run_eval.run(official=True, search_check=down, quiet=True, **kw)
+    assert not asked                                                                 # no question was asked
+    out = run_eval.run(search_check=down, **kw)                                      # a practice run goes on, with a warning
+    assert "Vector search is NOT available (connection refused)" in capsys.readouterr().out and len(asked) == len(QUESTIONS)
+    assert json.loads((out / "run_info.json").read_text(encoding="utf-8"))["vector_search"] is False
+    out = run_eval.run(search_check=lambda: (True, ""), quiet=True, **kw)
+    assert json.loads((out / "run_info.json").read_text(encoding="utf-8"))["vector_search"] is True
+    out = run_eval.run(mode="closed_book", search_check=down, quiet=True, **kw)      # a mode without the reports is not checked
+    assert "vector_search" not in json.loads((out / "run_info.json").read_text(encoding="utf-8"))

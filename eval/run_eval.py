@@ -94,6 +94,22 @@ def ask_simple(question: str, qid: str) -> tuple[dict, list]:
     return rec, [{"tool": "search_report", "result": cites}]
 
 
+# NEW (22 Nov 2026): is the vector search usable?
+# WHY: a practice run was made while Qdrant was not running. The search then falls back to keyword search only
+#      and prints one warning per search between the progress lines. Nothing stops, but summaries and ratios read
+#      from report text get worse passages: that run scored 2 of 8 on summaries where the runs before had 4 of 8,
+#      and the cause was easy to miss. The evaluation now checks once, before the first question. A practice run
+#      goes on with a clear warning and the fact is written to run_info.json; an OFFICIAL run does not start.
+def search_ready() -> tuple[bool, str]:
+    """(True, "") if the vector index answers and holds passages; else (False, why)."""
+    try:
+        from finsight.tools.search_report import _get_store
+        n = _get_store().count()
+        return (True, "") if n else (False, "the search index is empty; run the ingest")
+    except Exception as e:  # noqa: BLE001  connection refused, collection missing ...
+        return False, str(e)[:160]
+
+
 def _safe(obj, key: str | None = None):
     """A copy of a trace that can be stored: e-mail addresses and PAN-like ids are masked in every text, phone
     numbers only in the user's own question. WHY not everywhere: a figure such as 31052504740 looks like a phone
@@ -151,7 +167,8 @@ def finish(out: Path, questions: list[dict], info: dict) -> dict:
 
 def run(mode: str = "agent", official: bool = False, limit: int | None = None, ids: list[str] | None = None,
         types: list[str] | None = None, resume: Path | None = None, eval_set: Path = EVAL_SET, ask=None,
-        practice_dir: Path = PRACTICE, official_dir: Path = OFFICIAL, label: str = "", quiet: bool = False) -> Path:
+        practice_dir: Path = PRACTICE, official_dir: Path = OFFICIAL, label: str = "", quiet: bool = False,
+        search_check=None) -> Path:
     questions = [json.loads(line) for line in open(eval_set, encoding="utf-8") if line.strip()]
     if official and (limit or ids or types):
         raise SystemExit("An official run always asks every question: do not combine --official with --limit, --ids or --types.")
@@ -184,6 +201,21 @@ def run(mode: str = "agent", official: bool = False, limit: int | None = None, i
         info = {"mode": mode, "official": official, "started": dt.datetime.now().isoformat(timespec="seconds"), "model": settings.model_name,
                 "commit": _commit(), "questions": len(chosen), "eval_set": str(Path(eval_set).name)}
         (out / "run_info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
+    # NEW (22 Nov 2026): see search_ready() above. Only the modes that search the reports are checked, and not a
+    # run whose answers come from a function given by a test.
+    if mode in ("agent", "simple") and (given is None or search_check is not None):
+        ok, why = (search_check or search_ready)()
+        info["vector_search"] = ok
+        (out / "run_info.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
+        if not ok:
+            msg = (f"Vector search is NOT available ({why}).\n"
+                   "Start Qdrant first (Docker Desktop running, then: docker compose --env-file .env up -d qdrant), "
+                   "or check QDRANT_URL in .env.")
+            if official:
+                raise SystemExit("An official run needs the vector search.\n" + msg)
+            if not quiet:
+                print("\n" + "!" * 78 + "\nWARNING: " + msg + "\nThis practice run goes on with keyword search only. "
+                      "Summaries and ratios read from report text will score lower.\n" + "!" * 78 + "\n", flush=True)
     done = {json.loads(line)["id"] for line in open(out / "answers.jsonl", encoding="utf-8")} if (out / "answers.jsonl").exists() else set()
 
     todo = [q for q in chosen if q["id"] not in done]

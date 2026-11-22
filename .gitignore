@@ -38,3 +38,6 @@ results/notes/
 store/*.sqlite-journal
 store/*.sqlite-wal
 store/*.sqlite-shm
+# 22 Nov 2026: kept on the team laptops only (taken off GitHub by the team). The gold answers themselves are in eval/eval_set.jsonl.
+eval/gold_workbook.xlsx
+docs/FinSight_Team_Task_Tracker.xlsx

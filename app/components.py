@@ -211,3 +211,66 @@ def note_controls(st, a, title: str, key: str) -> None:
         st.success(f"Approved. Final note saved as {final.name} in results/notes/")
         st.download_button("Download the final note", data=final.read_text(encoding="utf-8"), file_name=final.name,
                            mime="text/markdown", key=f"note_download_{key}")
+
+
+# NEW (22 Nov 2026): follow-up suggestions as buttons under the newest answer. The questions are made by code in
+# app/suggest.py; see there for why and how. A click stores the question; the chat screen asks it on the next
+# run exactly as if it had been typed.
+def suggestion_buttons(st, a, question: str, key: str) -> None:
+    try:
+        import suggest
+        items = suggest.suggestions(a, question)
+    except Exception:  # noqa: BLE001  a problem here must never hide the answer
+        items = []
+    if not items:
+        return
+    # OLD (earlier on 22 Nov 2026): a grey caption and plain buttons.
+    #     st.caption("You could also ask:")
+    #     for col, (n, (text, full)) in zip(st.columns(len(items)), enumerate(items)):
+    #         if col.button(text, key=f"suggest_{key}_{n}", help=full): ...
+    # CHANGED (22 Nov 2026, after seeing it in the app): the heading is "Explore further" and the suggestions
+    # stand in a lightly tinted box with tinted, rounded buttons, so they read as one separate area and not as
+    # part of the answer. The colours are see-through tints of one green, so they work on a light and on a dark
+    # page. The tint is tied to the keys of the box and the buttons (classes "st-key-..."), which Streamlit
+    # writes from version 1.39 on; an older Streamlit shows the same box and buttons without the tint.
+    st.markdown("""<style>
+    [class*="st-key-explore_"] { background: rgba(46, 125, 107, 0.07); border-radius: 0.6rem; }
+    [class*="st-key-suggest_"] button { background: rgba(46, 125, 107, 0.14); border: 1px solid rgba(46, 125, 107, 0.45);
+                                         border-radius: 999px; font-weight: 600; }
+    [class*="st-key-suggest_"] button:hover { background: rgba(46, 125, 107, 0.28); border-color: rgba(46, 125, 107, 0.9); }
+    </style>""", unsafe_allow_html=True)
+    try:
+        box = st.container(border=True, key=f"explore_{key}")
+    except TypeError:                                           # Streamlit before 1.39: a container takes no key
+        box = st.container(border=True)
+    with box:
+        st.markdown("**Explore further**")
+        for col, (n, (text, full)) in zip(st.columns(len(items)), enumerate(items)):
+            if col.button(text, key=f"suggest_{key}_{n}", help=full, use_container_width=True):
+                st.session_state["suggested_question"] = full
+                st.rerun()
+
+
+# NEW (22 Nov 2026): bring the newest question to the top of the window.
+# WHY: Streamlit redraws the page when a question is sent but keeps the scroll position. A user who had scrolled
+#      up stayed there and had to scroll down by hand to see the answer. Streamlit has no setting for this, so a
+#      few lines of browser script are placed on the page: they find the chat messages and scroll the one that
+#      is `back` from the end into view (1 = the question just asked, while the agent works; 2 = the same
+#      question once its answer is below it). It is only called when a new question is asked, so opening a past
+#      conversation or changing a filter does not move the page. `n` makes each script different, otherwise the
+#      browser would not run it a second time.
+def scroll_to_latest(st, n: int, back: int = 1) -> None:
+    try:
+        import streamlit.components.v1 as html_component
+        html_component.html(
+            f"""<script>/* {n}-{back} */
+            setTimeout(function () {{
+              try {{
+                const m = window.parent.document.querySelectorAll('[data-testid="stChatMessage"]');
+                const t = m[m.length - {back}];
+                if (t) t.scrollIntoView({{behavior: "smooth", block: "start"}});
+              }} catch (e) {{}}
+            }}, 150);
+            </script>""", height=0)
+    except Exception:  # noqa: BLE001  no scrolling is better than no answer
+        pass
