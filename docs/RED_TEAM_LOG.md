@@ -1,6 +1,6 @@
 # FinSight — red-team log
 
-Prepared 22 Nov 2026 (tracker W4-09, W4-10, W4-11). The prompts and the expected behaviour are filled in. The
+Prepared 22 Nov 2026. The prompts and the expected behaviour are filled in. The
 last three columns are filled by the person who types the prompt into the live app with the real model.
 
 ## How to run it

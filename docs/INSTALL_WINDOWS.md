@@ -118,7 +118,7 @@ python scripts\endpoint_check.py
 python -m pytest -q
 ```
 
-Expected: **193 passed**.
+Expected: **198 passed**.
 
 ## 8\. Build the figure store (needed for number questions)
 
@@ -208,11 +208,28 @@ or N in the column `human_covered` for every row, save it as CSV, then:
 python eval/run_eval.py --rescore results/runs/<folder>
 ```
 
+## Baselines without the reports (added 22 Nov 2026)
+
+Four more evaluation modes ask the model the 90 questions **without any report text**, each in a different
+prompting style. They show what the reports and the agent add. Run them one at a time; the last one asks every
+question five times and takes several times longer.
+
+```
+python eval/run_eval.py --mode closed_book
+python eval/run_eval.py --mode few_shot
+python eval/run_eval.py --mode decompose
+python eval/run_eval.py --mode cot_sc
+python eval/baselines.py
+```
+
+The last command writes `results/week1_strategies.csv` and `results/week1_failures.csv` from the newest complete
+run of each mode. Try `--limit 5` first to see that a mode works.
+
 ## Optional: run everything with Docker
 
 You do not need Docker for the steps above. This is a second way to start the project: one command starts the
 chat screen, the search database (Qdrant) and the tracing service (Langfuse), with Python and the libraries
-already inside. **The team has not run this end to end yet** (tracker W4-06); treat the first run as a test.
+already inside. **The team has not run this end to end yet**; treat the first run as a test.
 
 What Docker does not contain, and you must still provide: the API key (in `.env`), the certificate file
 `vm04-ca.crt`, and the 30 report PDFs. None of them is in the image or on GitHub.

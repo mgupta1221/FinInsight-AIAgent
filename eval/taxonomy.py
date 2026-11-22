@@ -22,7 +22,7 @@ from __future__ import annotations
 import collections
 import re
 
-from score import SCALES, close, numbers_in   # noqa: E402  (same folder; eval/ is on sys.path when run as a script)
+from score import FREE_TEXT, SCALES, close, numbers_in   # noqa: E402  (same folder; eval/ is on sys.path when run as a script)
 
 LABELS = ["control", "tool_call_error", "retrieval_miss", "unit_error", "wrong_period_or_statement", "wrong_item",
           "calc_error", "hallucination"]
@@ -61,7 +61,10 @@ def label(row: dict, q: dict, a: dict) -> tuple[str, str]:
     if "ranking" in gold:
         return "calc_error", "the order of the companies differs from gold"
     g = gold.get("value")
-    if a.get("mode") == "simple":
+    # OLD: if a.get("mode") == "simple":
+    # CHANGED (22 Nov 2026): the same rule for the baselines without the reports. There, "hallucination" is a wrong
+    # figure given from memory and "retrieval_miss" is an answer with no figure ("I do not know").
+    if a.get("mode") in FREE_TEXT:
         if row.get("page_match"):
             return "calc_error", "a gold page was retrieved, but the value in the text is not the gold value"
         return ("hallucination" if numbers_in(text) else "retrieval_miss"), "free-text answer without the gold value or a gold page"

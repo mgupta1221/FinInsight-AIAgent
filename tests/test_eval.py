@@ -203,3 +203,87 @@ def test_summary_review_sheet_and_rescore(tmp_path, evalset):
     assert row["human_review"] == "done" and "judged by a person" in row["got"]
     assert "Y" in (out / "summary_review.csv").read_text(encoding="utf-8-sig")     # the filled sheet was not overwritten
     assert score.read_review(out / "summary_review.csv") == {("summary-001", 1): True, ("summary-001", 2): True, ("summary-001", 3): True}
+
+
+# ---- added 22 Nov 2026: the four baselines without the reports (eval/baselines.py) ----
+def test_baselines_ask_the_model_without_reports_and_keep_only_the_final_answer():
+    import baselines
+    calls = []
+
+    def chat(messages, max_tokens=None, temperature=0.0):
+        calls.append((messages[0]["content"][:40], temperature))
+        system = messages[0]["content"]
+        if system.startswith("Split"):
+            return "1. Revenue in FY2024-25?\n2. Revenue in FY2025-26?\n3. Percentage change?"
+        if "JSON object" in system:
+            return 'Here it is: {"status": "refused", "answer": "I cannot give investment advice."}'
+        if "Final answer" in system:
+            return "Revenue was 900 then 1000. Change = 100 / 900.\nFinal answer: Revenue rose by 11.11 percent."
+        return "Revenue from operations was Rs 1,000 crore."
+    rec, trace = baselines.ask_closed_book("q", "x", chat)
+    assert rec["status"] == "answered" and "1,000 crore" in rec["answer"] and rec["citations"] == [] and trace[0]["style"] == "closed_book"
+    rec, _ = baselines.ask_few_shot("Should I buy TCS shares?", "x", chat)
+    assert rec["status"] == "refused" and rec["answer"] == "I cannot give investment advice."
+    rec, trace = baselines.ask_decompose("q", "x", chat)
+    assert rec["answer"] == "Revenue rose by 11.11 percent." and rec["steps"] == 2 and "900" not in rec["answer"]   # reasoning is not scored
+    assert "Percentage change" in trace[0]["parts"]
+    n = len(calls)
+    rec, trace = baselines.ask_cot_sc("q", "x", chat, samples=3)
+    assert len(calls) == n + 3 and calls[-1][1] == 0.7 and rec["steps"] == 3 and trace[0]["votes"] == 3
+    assert set(baselines.ASK) == set(baselines.MODES) <= score.FREE_TEXT
+
+
+def test_self_consistency_takes_the_final_answer_given_most_often():
+    import baselines
+    replies = iter(["...\nFinal answer: The margin was 15.2 percent.", "...\nFinal answer: The margin was 18.0 percent.",
+                    "...\nFinal answer: Operating margin: 15.2 percent", "no final line, margin 15.2 percent", "Final answer: 21 percent"])
+    rec, trace = baselines.ask_cot_sc("q", "x", lambda m, **k: next(replies), samples=5)
+    assert rec["answer"] == "The margin was 15.2 percent." and trace[0]["votes"] == 3 and trace[0]["of"] == 5
+    assert baselines.vote_key("Rs 1,234.56 crore") == baselines.vote_key("about 1,230 crore") == "1.23e+03"
+    assert baselines.final_line("a\nFinal answer: x\nFinal answer: y\nmore") == "y"
+    bad = baselines.ask_few_shot("q", "x", lambda m, **k: "The answer is 5 percent {not json")[0]
+    assert bad["status"] == "answered" and "5 percent" in bad["answer"]                  # not valid JSON: the raw text is scored
+
+
+def test_free_text_baselines_are_scored_like_simple_search():
+    s = lambda qid, **kw: score.score_one(Q[qid], {"id": qid, **ans(**kw)})   # noqa: E731
+    assert s("fact-001", mode="closed_book", answer="Revenue was Rs 178,650 crore.")["correct"]
+    assert not s("fact-001", mode="cot_sc", answer="Revenue was Rs 150,000 crore.")["correct"]
+    refuse = next(i for i, q in Q.items() if q["gold"]["expect"] == "refuse")
+    clarify = next(i for i, q in Q.items() if q["gold"]["expect"] == "clarify")
+    assert s(refuse, mode="few_shot", status="refused", answer="No.")["correct"]          # the stated status counts
+    assert s(clarify, mode="few_shot", status="clarify", answer="Please say more.")["correct"]
+    assert not s(refuse, mode="simple", answer="TCS looks strong.")["correct"]            # simple search: unchanged
+    assert not s(clarify, mode="closed_book", answer="The profit was 5 crore.")["correct"]
+
+
+def test_baseline_runs_and_the_two_week1_files(tmp_path, evalset):
+    import csv
+    import baselines
+    reply = lambda m, **k: "Final answer: Revenue was Rs 178,650 crore."   # noqa: E731
+    asks = {"closed_book": lambda q, i: baselines.ask_closed_book(q, i, reply), "decompose": lambda q, i: baselines.ask_decompose(q, i, reply)}
+    for mode, fn in asks.items():
+        out = run_eval.run(mode=mode, eval_set=evalset, ask=fn, practice_dir=tmp_path / "runs", official_dir=tmp_path / "official", quiet=True)
+        assert json.loads((out / "run_info.json").read_text(encoding="utf-8"))["mode"] == mode
+    n = len(QUESTIONS)
+    found = baselines.latest_runs([tmp_path / "official", tmp_path / "runs"], want=n)
+    assert set(found) == {"closed_book", "decompose"}
+    a, b = baselines.week1_files(found, tmp_path / "results")
+    rows = list(csv.DictReader(open(a, encoding="utf-8-sig", newline="")))
+    total = [r for r in rows if r["question_type"] == "ALL"]
+    assert [r["mode"] for r in total] == ["closed_book", "decompose"] and all(int(r["questions"]) == n for r in total)
+    assert any(int(r["correct"]) > 0 for r in total) and all(int(r["correct"]) < n for r in total)
+    fails = list(csv.DictReader(open(b, encoding="utf-8-sig", newline="")))
+    assert fails and {"strategy", "failure", "wrong_answers", "example_id", "example_answer"} <= set(fails[0])
+
+
+def test_a_free_text_answer_that_declines_names_no_winner():
+    """Real run, 22 Nov 2026: "I cannot provide the operating margin for TCS, Infosys, and Wipro ..." was marked correct."""
+    s = lambda text, mode="closed_book": score.score_one(Q["compare-001"], {"id": "compare-001", **ans(mode=mode, answer=text)})   # noqa: E731
+    r = s("I cannot provide the operating margin for TCS, Infosys, and Wipro for FY2025-26 as the reports are not yet available.")
+    assert not r["correct"] and r["got"] == "declines to answer"
+    assert not s("I need the operating margin figures for TCS, Infosys, and Wipro in FY2025-26 to answer this question.", "few_shot")["correct"]
+    assert not s("I could not find the operating margin of TCS in the excerpts.", "simple")["correct"]
+    assert s("TCS had the highest operating margin in FY2025-26.")["correct"]
+    assert s("TCS leads, followed by Infosys and Wipro. However, exact figures are not provided here.")["correct"]   # a winner is named first
+    assert not s("Infosys had the highest operating margin.")["correct"]

@@ -47,6 +47,14 @@ _ASK_BACK = re.compile(r"\b(which|what) (company|bank|fiscal year|year|figure|ra
 _NOT_APPLICABLE = re.compile(r"\bno (outstanding )?(borrowings|debt)\b|not applicable|does not have any|has no ", re.I)
 
 
+# NEW (22 Nov 2026): a first sentence that gives no answer ("I cannot provide ...", "I need the figures ...").
+_DECLINES = re.compile(r"\b(cannot|can't|can not|unable to|do not know|don't know|do not have|don't have|not (yet )?(been )?(available|"
+                       r"released|provided|published)|could not find|i need|need the|please provide|no (data|information))\b", re.I)
+
+# NEW (22 Nov 2026): the modes whose answer is free text (no value field). "simple" was the only one before.
+FREE_TEXT = {"simple", "closed_book", "few_shot", "cot_sc", "decompose"}
+
+
 def close(got: float, gold: float) -> bool:
     return abs(got - gold) <= max(REL_TOL * abs(gold), ABS_TOL)
 
@@ -106,7 +114,10 @@ def score_one(q: dict, a: dict, review: dict | None = None) -> dict:
     points a summary covers, read from summary_review.csv. Where it is complete for a summary it is used in place
     of the word count."""
     gold, expect = q.get("gold") or {}, (q.get("gold") or {}).get("expect")
-    status, text, simple = a.get("status"), a.get("answer") or "", a.get("mode") == "simple"
+    # OLD: status, text, simple = a.get("status"), a.get("answer") or "", a.get("mode") == "simple"
+    # CHANGED (22 Nov 2026): the four baselines without the reports (eval/baselines.py) also answer in free text,
+    # so they are scored like simple search. For the agent and for simple search nothing changes.
+    status, text, simple = a.get("status"), a.get("answer") or "", a.get("mode") in FREE_TEXT
     row = {"id": q["id"], "type": q["type"], "expect": expect, "status": status, "correct": False, "reason": "",
            "expected": "", "got": "", "scope_expected": q.get("statement") or "", "scope_got": a.get("scope") or "",
            "cited": bool(a.get("citations")), "page_match": "", "formula_shown": "", "recall": "", "human_review": False,
@@ -122,8 +133,18 @@ def score_one(q: dict, a: dict, review: dict | None = None) -> dict:
         row["expected"] = " > ".join(gold["ranking"])
         if simple:
             first = _first_company(text, gold["ranking"])
-            row["got"], row["correct"] = first or "", first == gold["winner"]
-            row["reason"] = "" if row["correct"] else "the company named first is not the gold winner"
+            # OLD: row["got"], row["correct"] = first or "", first == gold["winner"]
+            #      row["reason"] = "" if row["correct"] else "the company named first is not the gold winner"
+            # CHANGED (22 Nov 2026, after the first runs of the baselines without the reports).
+            # WHY: "I cannot provide the operating margin for TCS, Infosys and Wipro ..." was marked correct: TCS is
+            #      the first company in the sentence (the question lists it first) and TCS is the gold winner. An
+            #      answer whose first sentence declines names no winner and is wrong. This only makes the free-text
+            #      modes stricter; the agent's ranking is read from its `ranking` field, not from the text.
+            declined = bool(_DECLINES.search(re.split(r"(?<=[.!?])\s", text.strip(), maxsplit=1)[0]))
+            row["got"] = "declines to answer" if declined else (first or "")
+            row["correct"] = not declined and first == gold["winner"]
+            row["reason"] = "" if row["correct"] else ("the answer declines; no winner is named" if declined
+                                                       else "the company named first is not the gold winner")
         elif status != "answered":
             row["reason"] = f"no answer (status {status})"
         else:
@@ -172,14 +193,20 @@ def score_one(q: dict, a: dict, review: dict | None = None) -> dict:
 
     elif expect in ("refuse", "not_in_corpus"):                                      # ---- must refuse
         row["expected"] = "refuses" + (f" ({gold.get('reason')})" if gold.get("reason") else "")
-        row["correct"] = bool(_REFUSAL.search(text)) if simple else status == "refused"
+        # OLD: row["correct"] = bool(_REFUSAL.search(text)) if simple else status == "refused"
+        # CHANGED (22 Nov 2026): the few-shot baseline states a status itself; "refused" there counts as a refusal.
+        # Simple search always has the status "answered", so its result is the same as before.
+        row["correct"] = (bool(_REFUSAL.search(text)) or status == "refused") if simple else status == "refused"
         row["got"] = status or ""
         row["reason"] = "" if row["correct"] else "answered or asked back instead of refusing"
 
     elif expect in ("clarify", "clarify_or_explain"):                                # ---- must ask back
         row["expected"] = "asks a clarifying question" + (" or explains why not" if expect.endswith("explain") else "")
         if simple:
-            row["correct"] = bool(_ASK_BACK.search(text)) or (expect.endswith("explain") and bool(_REFUSAL.search(text)))
+            # OLD: row["correct"] = bool(_ASK_BACK.search(text)) or (expect.endswith("explain") and bool(_REFUSAL.search(text)))
+            # CHANGED (22 Nov 2026): a stated status "clarify" (few-shot baseline) counts as asking back.
+            row["correct"] = (bool(_ASK_BACK.search(text)) or status == "clarify"
+                              or (expect.endswith("explain") and (bool(_REFUSAL.search(text)) or status == "refused")))
         else:
             row["correct"] = status == "clarify" or (expect.endswith("explain") and status == "refused")
         row["got"] = status or ""

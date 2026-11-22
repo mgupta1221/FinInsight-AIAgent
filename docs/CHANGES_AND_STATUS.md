@@ -1123,18 +1123,18 @@ Sixth practice run after the app changes (`2026-11-21_183017_agent`): 84 of 90, 
 
 Pending, in order:
 
-1. Push the current code (W4-16). The last push was commit `1d2322d`; everything since is only on the laptop.
-2. Team: review the summaries in `summary_review.csv`, then `--rescore` (W3-25).
-3. Team decisions: net NPA definition, Nestlé risk pages, `default_scope` (W1-04); then freeze the evaluation set (W1-10).
-4. Official runs: three of the agent, three of the baseline, then `python eval/metrics.py results/official` (W3-25, W2-15).
-5. Hand-check at least 15 wrong answers (W3-26).
-6. Safety: prompts in the live app and the red-team log of at least 15 prompts (W4-09, W4-11, W4-10).
-7. Documents: `SMALL_MODEL_FIXES.md` (D0-04), `DECISIONS.md` incl. plain Python loop (W3-20, W2-14), report (W4-12).
-8. Demo script, rehearsal, backup video (W4-13); submission (W4-14).
+1. Push the current code. The last push was commit `1d2322d`; everything since is only on the laptop.
+2. Team: review the summaries in `summary_review.csv`, then `--rescore`.
+3. Team decisions: net NPA definition, Nestlé risk pages, `default_scope`; then freeze the evaluation set.
+4. Official runs: three of the agent, three of the baseline, then `python eval/metrics.py results/official`.
+5. Hand-check at least 15 wrong answers.
+6. Safety: prompts in the live app and the red-team log of at least 15 prompts.
+7. Documents: `SMALL_MODEL_FIXES.md`, `DECISIONS.md` incl. plain Python loop, report.
+8. Demo script, rehearsal, backup video; submission.
 
-Open, to be decided whether needed for the submission: baseline prompt strategies (W1-11, W1-12), chunking study
-(W2-10), embedding and reranker comparison (W2-13), structured-output experiment (W3-22), Docker run (W4-06),
-CI (W4-07), per-session limit and answer cache (W4-08), a separate trace file or Langfuse (W3-21).
+Open, to be decided whether needed for the submission: baseline prompt strategies, chunking study
+, embedding and reranker comparison, structured-output experiment, Docker run,
+CI, per-session limit and answer cache, a separate trace file or Langfuse.
 
 No code was changed for this entry.
 
@@ -1201,3 +1201,85 @@ remain where they are the record of the work: author and verifier of each gold f
 `eval/eval_set.jsonl`) and "Assigned to" in the tracker. The API key is only in `.env`, which is not tracked.
 
 Unit tests: 193 passed on Python 3.11.
+
+## 57. Update 22 Nov 2026 — four baselines without the reports
+
+The evaluation compared the agent only with simple search. The build plan also asks for the model **without any
+report text**, in the prompting styles of the brief. These are now four more modes of `eval/run_eval.py`:
+
+| Mode | What it does | Model calls per question |
+|---|---|---|
+| `closed_book` | The question and one line of instruction | 1 |
+| `few_shot` | Five worked examples first; the answer as a small JSON object with a status | 1 |
+| `cot_sc` | "Think step by step", asked 5 times at temperature 0.7; the final answer given most often wins | 5 |
+| `decompose` | First call splits the question into simple questions; second call answers them | 2 |
+
+```
+python eval/run_eval.py --mode closed_book
+python eval/run_eval.py --mode few_shot
+python eval/run_eval.py --mode decompose
+python eval/run_eval.py --mode cot_sc
+python eval/baselines.py
+```
+
+The last command reads the newest complete run of every mode (these four, simple search and the agent) and writes
+`results/week1_strategies.csv` (accuracy per style and question type) and `results/week1_failures.csv` (the kinds
+of mistake of each style, with one example).
+
+Points to know:
+
+- Only the final answer is scored, not the reasoning, so a figure that appears in the reasoning cannot count.
+- No style can cite a page: there is no report text. "A cited page is a gold page" is 0 by design.
+- In the failures file, "hallucination" is a wrong figure given from memory and "retrieval_miss" is an answer
+  with no figure ("I do not know").
+
+Files: `eval/baselines.py` (new); `eval/run_eval.py` (the mode list); `eval/score.py` and `eval/taxonomy.py` (the
+free-text scoring that existed for simple search now also applies to these modes). **The agent and the app are not
+touched.** Checked: the agent run `2026-11-21_183017_agent` and the simple-search run `2026-11-21_163005_simple`
+were scored again with the changed scorer; both `scored.csv` files are identical to before (84 of 90, 37 of 90).
+
+4 tests added. Unit tests: 197 passed on Python 3.11.
+
+## 58. Results 22 Nov 2026 — the four baselines without the reports, and one correction to the scorer
+
+Practice runs on the real model, all 90 questions. Files: `results/week1_strategies.csv`, `results/week1_failures.csv`.
+
+| Question type | Closed-book | Few-shot | Step by step ×5 | Decomposition | Simple search | Agent |
+|---|---|---|---|---|---|---|
+| Fact (18) | 0 | 0 | 0 | 0 | 12 | 18 |
+| Ratio (16) | 0 | 0 | 0 | 0 | 9 | 15 |
+| Year-on-year (12) | 0 | 0 | 0 | 0 | 3 | 12 |
+| Comparison (14) | 3 | 1 | 0 | 2 | 5 | 14 |
+| Multi-step (6) | 0 | 0 | 0 | 0 | 2 | 5 |
+| Summary (8) | 0 | 0 | 0 | 0 | 0 | 4 |
+| Clarify (6) | 4 | 5 | 4 | 1 | 0 | 6 |
+| Refuse (6) | 6 | 6 | 4 | 4 | 4 | 6 |
+| Not in the reports (2) | 0 | 0 | 0 | 0 | 0 | 2 |
+| Planted instruction (2) | 0 | 0 | 0 | 0 | 2 | 2 |
+| **All (90)** | **13 (14.4%)** | **12 (13.3%)** | **8 (8.9%)** | **7 (7.8%)** | **37 (41.1%)** | **84 (93.3%)** |
+
+What the runs show:
+
+- **Without the reports the model answers no figure correctly: 0 of 52 on facts, ratios, changes and multi-step
+  questions, in every style.** It says the FY2025-26 results "have not been released yet": the reports are newer
+  than its training. Every correct figure of the agent therefore comes from the reports.
+- **Prompting style does not replace the reports.** The plain question did best (13); more elaborate prompting
+  did worse. Asked to split the question and answer the parts, the model stopped saying "I do not know" and made
+  figures up: 24 invented figures with decomposition against 1 closed-book (for example a net profit of
+  Rs 1,62,265 crore for TCS), and it produced a revenue forecast it should have refused.
+- **What the model can do alone** is behave: refuse advice (6 of 6 closed-book and few-shot) and ask back
+  (5 of 6 with examples). Simple search loses exactly this (clarify 0 of 6): given passages, the model answers
+  from them even when the question is incomplete.
+- The few comparison marks without reports are answers that name the right company from general knowledge,
+  with no figure.
+
+**Correction to the scorer** (`eval/score.py`). In free-text modes a comparison counted as correct when the first
+company named was the gold winner. "I cannot provide the operating margin for TCS, Infosys and Wipro ..." was
+therefore marked correct, because the question lists TCS first. An answer whose first sentence declines is now
+wrong. Effect: closed-book 17 → 13, few-shot 16 → 12, step by step 14 → 8, decomposition 8 → 7. Simple search
+(37) and the agent (84) are unchanged; the agent's ranking is read from its `ranking` field, not from text.
+
+Runs used: `2026-11-22_153206_closed_book`, `2026-11-22_153509_few_shot`, `2026-11-22_154552_cot_sc`,
+`2026-11-22_153847_decompose`, `2026-11-21_163005_simple`, `2026-11-21_204042_agent`.
+
+1 test added. Unit tests: 198 passed on Python 3.11.

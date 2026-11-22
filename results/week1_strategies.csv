@@ -1,0 +1,67 @@
+﻿strategy,mode,question_type,questions,correct,accuracy_percent,run
+Closed-book,closed_book,fact,18,0,0.0,2026-11-22_153206_closed_book
+Closed-book,closed_book,ratio,16,0,0.0,2026-11-22_153206_closed_book
+Closed-book,closed_book,yoy,12,0,0.0,2026-11-22_153206_closed_book
+Closed-book,closed_book,compare_rank,14,3,21.4,2026-11-22_153206_closed_book
+Closed-book,closed_book,multi_hop_note,6,0,0.0,2026-11-22_153206_closed_book
+Closed-book,closed_book,summary,8,0,0.0,2026-11-22_153206_closed_book
+Closed-book,closed_book,clarify,6,4,66.7,2026-11-22_153206_closed_book
+Closed-book,closed_book,refuse,6,6,100.0,2026-11-22_153206_closed_book
+Closed-book,closed_book,unanswerable,2,0,0.0,2026-11-22_153206_closed_book
+Closed-book,closed_book,injection_doc,2,0,0.0,2026-11-22_153206_closed_book
+Closed-book,closed_book,ALL,90,13,14.4,2026-11-22_153206_closed_book
+Few-shot JSON,few_shot,fact,18,0,0.0,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,ratio,16,0,0.0,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,yoy,12,0,0.0,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,compare_rank,14,1,7.1,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,multi_hop_note,6,0,0.0,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,summary,8,0,0.0,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,clarify,6,5,83.3,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,refuse,6,6,100.0,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,unanswerable,2,0,0.0,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,injection_doc,2,0,0.0,2026-11-22_153509_few_shot
+Few-shot JSON,few_shot,ALL,90,12,13.3,2026-11-22_153509_few_shot
+"Step by step, 5 samples, majority",cot_sc,fact,18,0,0.0,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,ratio,16,0,0.0,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,yoy,12,0,0.0,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,compare_rank,14,0,0.0,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,multi_hop_note,6,0,0.0,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,summary,8,0,0.0,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,clarify,6,4,66.7,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,refuse,6,4,66.7,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,unanswerable,2,0,0.0,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,injection_doc,2,0,0.0,2026-11-22_154552_cot_sc
+"Step by step, 5 samples, majority",cot_sc,ALL,90,8,8.9,2026-11-22_154552_cot_sc
+Decomposition,decompose,fact,18,0,0.0,2026-11-22_153847_decompose
+Decomposition,decompose,ratio,16,0,0.0,2026-11-22_153847_decompose
+Decomposition,decompose,yoy,12,0,0.0,2026-11-22_153847_decompose
+Decomposition,decompose,compare_rank,14,2,14.3,2026-11-22_153847_decompose
+Decomposition,decompose,multi_hop_note,6,0,0.0,2026-11-22_153847_decompose
+Decomposition,decompose,summary,8,0,0.0,2026-11-22_153847_decompose
+Decomposition,decompose,clarify,6,1,16.7,2026-11-22_153847_decompose
+Decomposition,decompose,refuse,6,4,66.7,2026-11-22_153847_decompose
+Decomposition,decompose,unanswerable,2,0,0.0,2026-11-22_153847_decompose
+Decomposition,decompose,injection_doc,2,0,0.0,2026-11-22_153847_decompose
+Decomposition,decompose,ALL,90,7,7.8,2026-11-22_153847_decompose
+"Simple search (reports, one answer)",simple,fact,18,12,66.7,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,ratio,16,9,56.2,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,yoy,12,3,25.0,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,compare_rank,14,5,35.7,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,multi_hop_note,6,2,33.3,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,summary,8,0,0.0,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,clarify,6,0,0.0,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,refuse,6,4,66.7,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,unanswerable,2,0,0.0,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,injection_doc,2,2,100.0,2026-11-21_163005_simple
+"Simple search (reports, one answer)",simple,ALL,90,37,41.1,2026-11-21_163005_simple
+Agent,agent,fact,18,18,100.0,2026-11-21_204042_agent
+Agent,agent,ratio,16,15,93.8,2026-11-21_204042_agent
+Agent,agent,yoy,12,12,100.0,2026-11-21_204042_agent
+Agent,agent,compare_rank,14,14,100.0,2026-11-21_204042_agent
+Agent,agent,multi_hop_note,6,5,83.3,2026-11-21_204042_agent
+Agent,agent,summary,8,4,50.0,2026-11-21_204042_agent
+Agent,agent,clarify,6,6,100.0,2026-11-21_204042_agent
+Agent,agent,refuse,6,6,100.0,2026-11-21_204042_agent
+Agent,agent,unanswerable,2,2,100.0,2026-11-21_204042_agent
+Agent,agent,injection_doc,2,2,100.0,2026-11-21_204042_agent
+Agent,agent,ALL,90,84,93.3,2026-11-21_204042_agent
