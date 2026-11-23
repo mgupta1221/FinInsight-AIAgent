@@ -245,10 +245,19 @@ def suggestion_buttons(st, a, question: str, key: str) -> None:
         box = st.container(border=True)
     with box:
         st.markdown("**Explore further**")
-        for col, (n, (text, full)) in zip(st.columns(len(items)), enumerate(items)):
-            if col.button(text, key=f"suggest_{key}_{n}", help=full, use_container_width=True):
-                st.session_state["suggested_question"] = full
-                st.rerun()
+        # OLD (earlier on 22 Nov 2026): all buttons in one row.
+        #     for col, (n, (text, full)) in zip(st.columns(len(items)), enumerate(items)):
+        #         if col.button(text, key=f"suggest_{key}_{n}", help=full, use_container_width=True): ...
+        # CHANGED (22 Nov 2026, after seeing it in the app): two buttons per row.
+        # WHY: four buttons in one row were too narrow for their text; the screen showed "Same for FY202...",
+        #      "Change from FY...", "Revenue from o...". With two per row each button has half the width and the
+        #      whole text fits. The keys are unchanged.
+        for start in range(0, len(items), 2):
+            for col, n in zip(st.columns(2), range(start, min(start + 2, len(items)))):
+                text, full = items[n]
+                if col.button(text, key=f"suggest_{key}_{n}", help=full, use_container_width=True):
+                    st.session_state["suggested_question"] = full
+                    st.rerun()
 
 
 # NEW (22 Nov 2026): bring the newest question to the top of the window.

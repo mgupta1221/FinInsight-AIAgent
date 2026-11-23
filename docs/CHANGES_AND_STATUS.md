@@ -1467,3 +1467,28 @@ also prints a "CORRECT" column (questions − not usable − wrong content), and
 started from a folder without `.env`.
 
 No change to the agent. Unit tests: 204 passed on Python 3.11.
+
+## 65. Status 22 Nov 2026 — first real Docker run: it works
+
+On a Windows laptop with Docker Desktop, with the files as changed in section 63:
+
+| Step | Result |
+|---|---|
+| `docker compose --env-file .env up --build --wait app qdrant` | Image built in under 6 minutes; both containers "Healthy" |
+| Chat screen at http://localhost:8501 | Opened; a question was answered |
+| `docker compose exec app python -m pytest -q` | 204 passed |
+| `docker compose exec app python eval/run_eval.py --limit 5` | 5 of 5; no vector-search warning, so Qdrant is reached from inside the container |
+
+The existing Qdrant container and its index were reused; no new ingest was needed. The result folder of the short
+evaluation appeared in `results/runs/` on the laptop, as intended.
+
+Two things to know: run folders made inside Docker are named by the container's clock, which is UTC and not local
+time; and the three warnings in the test run are a renamed function in the embedding library, not a fault.
+
+Not tested: a Mac, a laptop that has never run the ingest, and starting Langfuse.
+
+The chat screen in Docker also answered a question that needs the search database (HDFC Bank CASA ratio, 34.10%,
+page 255), and the "Explore further" box showed with its tint.
+
+One change after looking at that screen (`app/components.py`): the "Explore further" buttons are laid out two per
+row. Four in one row were too narrow and their text was cut off ("Same for FY202...").
