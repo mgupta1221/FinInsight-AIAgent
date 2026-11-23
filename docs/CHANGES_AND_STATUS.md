@@ -1392,3 +1392,103 @@ Repeated with Qdrant running (`2026-11-22_175809_agent`): 84 of 90, summaries 4 
 before. This run was made after the guard changes of section 59, so they moved no evaluation answer.
 
 1 test added. Unit tests: 203 passed on Python 3.11.
+
+## 63. Update 22 Nov 2026 — structured-output experiment, and the Docker files made ready for a first real run
+
+**Structured-output experiment** (`eval/structured_output_experiment.py`, new). The planner asks the model for a
+small form. The script puts the evaluation questions that reach the planner (83 of the 90) to that one model step
+in four ways and counts, for each, the replies usable at once, usable after asking again, and not usable, and the
+usable forms with a wrong intent, company, year or metric.
+
+| Way | How the form is asked for |
+|---|---|
+| `agent` | As the agent does it: the `instructor` library in its default mode (the form is offered as a tool to call), validated, asked again on a fault |
+| `json_schema` | The exact shape is sent to the server, which lets the model produce only fitting text |
+| `json_object` | The server guarantees valid JSON only; the fields are described in the prompt |
+| `plain` | The fields are described in the prompt; nothing is enforced |
+
+```
+python eval/structured_output_experiment.py --limit 10
+python eval/structured_output_experiment.py
+```
+
+Writes `results/structured_output_experiment.csv` and `results/structured_output_summary.csv`. A way the endpoint
+does not accept is reported as "not supported". It is an evaluation script only: the agent is not changed, and
+the file can be deleted without any effect. Not yet run on the real model.
+
+Note: the agent does **not** use constrained decoding. It uses `instructor`'s default mode with validation and up
+to two retries (`src/finsight/llm.py`). The experiment shows whether constrained decoding would do better.
+
+**Docker** (`Dockerfile`, `docker-compose.yml`). Read through before the first real run; four things changed:
+
+| Change | Why |
+|---|---|
+| Installs `.[quality,dev]` and the CPU build of PyTorch (was `.[all]`) | `[all]` adds the unused Docling / Camelot / OCR parsers and the GPU libraries: several GB and many minutes |
+| The conversation database is in a Docker volume (`MEMORY_DB=/app/state/memory.sqlite`) | SQLite needs file locking, which a folder shared from Windows does not always give |
+| The downloaded embedding and reranker models are kept in the same volume (`HF_HOME`) | Otherwise they are downloaded again at every start |
+| `./results` is shared with the laptop | Evaluation results and notes written in the container are not lost |
+
+The start command is now `docker compose --env-file .env up --build --wait app qdrant` (Langfuse is not used).
+On a laptop that already ran the ingest with Qdrant in Docker from the same folder, no new ingest is needed.
+**Not tested: Docker cannot be run from where these files were edited.** The install guides have the steps.
+
+1 test added. Unit tests: 204 passed on Python 3.11.
+
+## 64. Results 22 Nov 2026 — structured-output experiment
+
+`python eval/structured_output_experiment.py` on the real model: the 83 evaluation questions that reach the planner,
+each asked for the planner's form in four ways. Files: `results/structured_output_experiment.csv` (every reply),
+`results/structured_output_summary.csv`.
+
+| Way | Questions | Usable on the first try | After asking again | Not usable | Wrong content | Correct |
+|---|---|---|---|---|---|---|
+| `agent` (as built: `instructor`, validated) | 83 | 83 | 0 | 0 | 2 | 81 (97.6%) |
+| `json_schema` (the server enforces the shape) | 83 | 83 | 0 | 0 | 2 | 81 (97.6%) |
+| `json_object` (valid JSON guaranteed) | 83 | 83 | 0 | 0 | 1 | 82 (98.8%) |
+| `plain` (described in the prompt only) | 83 | 83 | 0 | 0 | 1 | 82 (98.8%) |
+
+What it shows:
+
+- **The format is not this model's weak point.** With thinking switched off, temperature 0 and a short, described
+  form, Qwen3-8B returned a readable form every time, in every way, with no extra text and no retry. Enforcing the
+  shape on the server brings no gain here; validation and retry in the agent are a safety net that was not needed
+  on these questions.
+- **The few faults are faults of content, and the same in every way.** "What was HDFC Bank's gross NPA ratio?"
+  came back in all four ways as a *figure* to look up (`item: gross_npa_ratio`) and not as a *ratio*
+  (`metric`). That is why the agent does not trust the form as it comes: code decides the measure from the words
+  of the question afterwards (`planner.resolve`), and the agent answers these questions correctly.
+- **Enforcing the shape had one side effect.** With `json_schema` the model filled in `scope: consolidated` for 10
+  questions that name no scope (for example a bank's deposits); the other ways left it empty. An enforced form
+  invites the model to fill optional fields. In the agent an empty scope is right: code then applies the default
+  for the company.
+
+Limits: one run; one form (the planner's); questions of the evaluation set, which are well-formed. The script now
+also prints a "CORRECT" column (questions − not usable − wrong content), and stops with a clear message when it is
+started from a folder without `.env`.
+
+No change to the agent. Unit tests: 204 passed on Python 3.11.
+
+## 65. Status 22 Nov 2026 — first real Docker run: it works
+
+On a Windows laptop with Docker Desktop, with the files as changed in section 63:
+
+| Step | Result |
+|---|---|
+| `docker compose --env-file .env up --build --wait app qdrant` | Image built in under 6 minutes; both containers "Healthy" |
+| Chat screen at http://localhost:8501 | Opened; a question was answered |
+| `docker compose exec app python -m pytest -q` | 204 passed |
+| `docker compose exec app python eval/run_eval.py --limit 5` | 5 of 5; no vector-search warning, so Qdrant is reached from inside the container |
+
+The existing Qdrant container and its index were reused; no new ingest was needed. The result folder of the short
+evaluation appeared in `results/runs/` on the laptop, as intended.
+
+Two things to know: run folders made inside Docker are named by the container's clock, which is UTC and not local
+time; and the three warnings in the test run are a renamed function in the embedding library, not a fault.
+
+Not tested: a Mac, a laptop that has never run the ingest, and starting Langfuse.
+
+The chat screen in Docker also answered a question that needs the search database (HDFC Bank CASA ratio, 34.10%,
+page 255), and the "Explore further" box showed with its tint.
+
+One change after looking at that screen (`app/components.py`): the "Explore further" buttons are laid out two per
+row. Four in one row were too narrow and their text was cut off ("Same for FY202...").

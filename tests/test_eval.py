@@ -304,3 +304,42 @@ def test_a_run_checks_the_vector_search_before_the_first_question(tmp_path, eval
     assert json.loads((out / "run_info.json").read_text(encoding="utf-8"))["vector_search"] is True
     out = run_eval.run(mode="closed_book", search_check=down, quiet=True, **kw)      # a mode without the reports is not checked
     assert "vector_search" not in json.loads((out / "run_info.json").read_text(encoding="utf-8"))
+
+
+# ---- added 22 Nov 2026: the structured-output experiment (eval/structured_output_experiment.py) ----
+def test_structured_output_experiment_counts_usable_broken_and_wrong_forms(tmp_path):
+    import structured_output_experiment as soe
+    from finsight.schemas import AgentPlan
+    good = {"intent": "fact", "companies": ["Infosys"], "fiscal_years": ["2025-26"], "scope": "consolidated", "item": "revenue_from_operations"}
+    assert soe.read_form(json.dumps(good))[0] == "valid"
+    assert soe.read_form("Sure! Here is the plan:\n" + json.dumps(good) + "\nAnything else?")[0] == "extra_text"
+    assert soe.read_form('{"intent": "fact", "companies": ["Infosys], ')[0] == "invalid"            # broken JSON
+    assert soe.read_form('{"type": "ratio_question", "company": "Wipro"}')[0] == "invalid"          # JSON, but not the form
+    q = Q["fact-001"]
+    assert soe.content_faults(AgentPlan.model_validate(good), q) == []
+    wrong = AgentPlan.model_validate({**good, "intent": "ratio", "companies": ["Wipro"], "fiscal_years": ["2024-25"]})
+    assert soe.content_faults(wrong, q) == ["intent ratio", "company", "fiscal year"]
+    assert "metric net_profit_margin" in soe.content_faults(AgentPlan.model_validate({"intent": "ratio", "companies": ["Wipro"], "fiscal_years": ["2025-26"],
+                                                                                    "metric": "net_profit_margin"}), {**Q["ratio-001"], "metric": "operating_margin"})
+    assert '"intent"' in soe.form_text() and "one of" in soe.form_text()
+
+    calls = {"plain": 0}
+
+    def plain(question, again=False):                       # broken at first, fine when asked again
+        calls["plain"] += 1
+        return json.dumps(good) if again else "Here you go: {intent: fact"
+
+    def refused(question, again=False):
+        raise RuntimeError("Error code: 400 - response_format json_schema is not supported")
+    callers = {"agent": lambda question, again=False: AgentPlan.model_validate(good), "json_schema": refused,
+               "json_object": lambda question, again=False: "```json\n" + json.dumps(good) + "\n```", "plain": plain}
+    rows, summary = soe.run([Q["fact-001"], Q["ratio-001"]], callers, quiet=True)
+    by = {s["way"]: s for s in summary}
+    assert by["agent"]["first_try"] == 2 and by["agent"]["wrong_content"] == 1                      # right for the fact, wrong for the ratio question
+    assert by["agent"]["correct"] == 1 and by["agent"]["correct_percent"] == 50.0 and "CORRECT" in soe.table(summary)
+    assert by["json_schema"]["questions"] == 0 and "not supported" in by["json_schema"]["note"]
+    assert by["json_object"]["first_try_extra_text"] == 2
+    assert by["plain"]["after_retry"] == 2 and by["plain"]["failed"] == 0 and calls["plain"] == 4
+    assert len(rows) == 6 and "not supported" in soe.table(summary)
+    a, b = soe.write(rows, summary, tmp_path)
+    assert a.exists() and b.read_text(encoding="utf-8-sig").startswith("way,questions,first_try")

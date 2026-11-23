@@ -118,7 +118,7 @@ python scripts\endpoint_check.py
 python -m pytest -q
 ```
 
-Expected: **203 passed**.
+Expected: **204 passed**.
 
 ## 8\. Build the figure store (needed for number questions)
 
@@ -227,45 +227,49 @@ run of each mode. Try `--limit 5` first to see that a mode works.
 
 ## Optional: run everything with Docker
 
-You do not need Docker for the steps above. This is a second way to start the project: one command starts the
-chat screen, the search database (Qdrant) and the tracing service (Langfuse), with Python and the libraries
-already inside. **The team has not run this end to end yet**; treat the first run as a test.
+You do not need Docker for the steps above. This is a second way to start the project: one command builds a
+container with Python and the libraries inside and starts the chat screen together with the search database
+(Qdrant). First run by the team on 22 Nov 2026, on Windows: build under 6 minutes, chat screen opened, 204 tests passed and a short evaluation scored 5 of 5 inside the container. Not yet tried on a Mac or on a laptop that has never run the ingest.
 
 What Docker does not contain, and you must still provide: the API key (in `.env`), the certificate file
-`vm04-ca.crt`, and the 30 report PDFs. None of them is in the image or on GitHub.
+`vm04-ca.crt`, and the report PDFs or the stores built from them. None of them is in the image or on GitHub.
 
 1. Install Docker Desktop and start it.
-2. In the project folder: copy `.env.example` to `.env` and set `OPENAI_API_KEY`.
-3. Put `vm04-ca.crt` in the project folder and the PDFs in `data/manual-collection/`.
-4. Build and start (the first build downloads several GB and can take 20 minutes or more):
+2. In the project folder: `.env` with `OPENAI_API_KEY` set, and `vm04-ca.crt` beside it.
+3. Build and start the app and Qdrant (the first build downloads about 2 to 3 GB and can take 15 minutes or more):
 
    ```
-   docker compose --env-file .env up --build --wait
+   docker compose --env-file .env up --build --wait app qdrant
    ```
 
-5. Build the figure store and the search index inside Docker (once; needed even if you already ran the ingest
-   without Docker, because Docker uses its own Qdrant):
+4. Open http://localhost:8501 for the chat screen.
+5. The ingest. **Not needed** if this laptop already ran the ingest with Qdrant in Docker from this same folder:
+   the figure store and parsed text are in `store/` and `data/`, which the container shares, and the search index
+   is in the Qdrant volume that Docker keeps. On a laptop that never ran the ingest (PDFs in
+   `data/manual-collection/` first):
 
    ```
    docker compose exec app python -m ingest.run_ingest
    ```
 
-6. Open http://localhost:8501 for the chat screen.
-7. A short evaluation inside Docker, to confirm the model endpoint is reached:
+6. Check it from inside the container:
 
    ```
+   docker compose exec app python -m pytest -q
    docker compose exec app python eval/run_eval.py --limit 5
    ```
 
-8. Stop: `docker compose --env-file .env down`
+7. Stop: `docker compose --env-file .env down` (the volumes, and so the search index, are kept).
 
 Notes:
 
-- The folders `store/` and `data/` are shared with your laptop, so the figure store, past conversations and
-  parsed text stay after the containers stop. The Qdrant index is kept in a Docker volume.
-- Inside Docker the settings `QDRANT_URL`, `LANGFUSE_HOST` and `OPENAI_CA_CERT` are set by
-  `docker-compose.yml`; the values in `.env` for these three are ignored.
-- The `docs/` and `results/` folders are not copied into the image. Evaluation results written inside the
-  container are lost when it is removed; run the official evaluation without Docker.
-- If only the search database is wanted from Docker: `docker compose --env-file .env up -d qdrant` and keep
-  `QDRANT_URL=http://localhost:6333` in `.env`.
+- `store/`, `data/` and `results/` are shared with the laptop. Evaluation results and exported notes written
+  inside the container appear in `results/`.
+- Past conversations made in the Docker app are kept in a Docker volume, separate from those of the app started
+  without Docker.
+- The first question after a start is slow: the embedding model and the reranker are downloaded once (they are
+  then kept in a Docker volume).
+- Inside Docker the settings `QDRANT_URL`, `OPENAI_CA_CERT`, `MEMORY_DB` and `LANGFUSE_HOST` are set by
+  `docker-compose.yml`; the values in `.env` for these are ignored.
+- Langfuse is not used by the code. To start it as well, leave `app qdrant` off the command in step 3.
+- Make the official evaluation runs without Docker, in the environment the practice runs were made in.

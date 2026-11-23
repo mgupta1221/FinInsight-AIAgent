@@ -1,0 +1,5 @@
+﻿way,questions,first_try,first_try_extra_text,after_retry,failed,wrong_content,note,correct,correct_percent
+agent,83,83,0,0,0,2,,81,97.6
+json_schema,83,83,0,0,0,2,,81,97.6
+json_object,83,83,0,0,0,1,,82,98.8
+plain,83,83,0,0,0,1,,82,98.8
