@@ -4,7 +4,9 @@
 #   1. Copy .env.example to .env and fill in OPENAI_API_KEY.
 #   2. Place vm04-ca.crt in the project root.
 #   3. Place the 30 annual-report PDFs in data/manual-collection/.
-#   4. docker compose --env-file .env up --build --wait
+#   4. docker compose --env-file .env up --build --wait app qdrant
+#      (CHANGED 22 Nov 2026: "app qdrant" starts only what the project uses. Langfuse is not used by the code;
+#       leave the two names out to start it as well.)
 #   5. Open http://localhost:8501 for the chat UI.
 #
 # To run ingestion inside Docker:
@@ -22,6 +24,13 @@ services:
       - LANGFUSE_HOST=http://langfuse:3000
       # Cert is at /app/vm04-ca.crt (copied by Dockerfile).
       - OPENAI_CA_CERT=/app/vm04-ca.crt
+      # ADDED (22 Nov 2026, before the first real Docker run):
+      # The conversation database is kept in a Docker volume, not in the shared ./store folder. WHY: SQLite needs
+      # file locking, which a folder shared from Windows or macOS does not always give; the app would then fail on
+      # the first question. Past conversations made inside Docker therefore stay inside Docker.
+      - MEMORY_DB=/app/state/memory.sqlite
+      # The embedding model and the reranker are downloaded once and kept in the same volume, not on every start.
+      - HF_HOME=/app/state/huggingface
     depends_on:
       qdrant:
         condition: service_started
@@ -30,6 +39,10 @@ services:
       - ./store:/app/store
       - ./data:/app/data
       - ./vm04-ca.crt:/app/vm04-ca.crt:ro
+      # ADDED (22 Nov 2026): see MEMORY_DB and HF_HOME above; and evaluation results and exported notes written
+      # inside the container land in ./results on the laptop, so they are not lost when the container is removed.
+      - app-state:/app/state
+      - ./results:/app/results
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -63,5 +76,6 @@ services:
       - langfuse-db-data:/var/lib/postgresql/data
 
 volumes:
+  app-state:
   qdrant-data:
   langfuse-db-data:
