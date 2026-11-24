@@ -66,7 +66,10 @@ ITEM_PHRASES = [("total_expenses", r"total expenses|total expenditure|total cost
                 ("net_profit", r"net profit|profit after tax|\bpat\b|profit for the year")]
 # Loose words: used only when neither a phrase nor the model settles the item.
 ITEM_WORDS = [("revenue_from_operations", r"revenue|sales|turnover"), ("net_profit", r"\bprofit\b|earnings"),
-              ("deposits", r"deposits"), ("advances", r"\badvances\b|\bloans\b"), ("total_expenses", r"expenses")]
+              ("deposits", r"deposits"), ("advances", r"\badvances\b|\bloans\b"), ("total_expenses", r"expenses"),
+              # ADDED (24 Nov 2026): "loss" is the same line of the statement as net profit ("profit / (loss) for the
+              # year"). Before, the word was understood only if the model happened to map it. See asks_for_loss().
+              ("net_profit", r"\bloss(es)?\b|\bloses\b")]
 FOLLOW_UP = re.compile(r"^\s*(and|what about|how about|now|same|also|then)\b|\b(that|this|it|them|those)\b", re.I)
 
 
@@ -100,11 +103,23 @@ def _vocabulary() -> set[str]:
     return words
 
 
-def _unknown_words(question: str, tickers: list[str]) -> list[str]:
+# OLD: def _unknown_words(question: str, tickers: list[str]) -> list[str]:
+# NEW (24 Nov 2026, later): `loose` also accepts a word that is a near miss of a finance word.
+# WHY: "Revenue from operation" (no s) and "Revenue from operatiom" (a typing slip) each had one "unknown" word,
+#      so the question was not seen as a follow-up about the same company and the agent asked "Which company do
+#      you mean?" right after the user had named it. With loose=True a word of six letters or more that differs
+#      from a vocabulary word by a letter or an ending counts as known. It is used in ONE place only (the
+#      same-company rule in resolve); every other check keeps the exact rule.
+def _unknown_words(question: str, tickers: list[str], loose: bool = False) -> list[str]:
     """Content words of the question that are not filler, not a company name and not finance vocabulary.
 
     NEW (15 Nov 2026). "And for Infosys?" -> []; "What is best price to buy TCS?" -> ['best', 'price', 'buy'].
     """
+    if loose:
+        import difflib
+        vocab_list = list(_vocabulary())
+        return [w for w in _unknown_words(question, tickers)
+                if not (len(w) >= 6 and difflib.get_close_matches(w, vocab_list, n=1, cutoff=0.8))]
     from finsight.tools.company_match import _aliases
     names: set[str] = set()
     for t in tickers:
@@ -112,6 +127,75 @@ def _unknown_words(question: str, tickers: list[str]) -> list[str]:
             names |= set(re.findall(r"[a-z]+", n.lower()))
     vocab = _vocabulary()
     return [w for w in re.findall(r"[a-z]+", question.lower()) if len(w) > 1 and w not in _FILLER and w not in names and w not in vocab]
+
+
+# NEW (24 Nov 2026, mentor's review): one place that decides whether a question names a company OUTSIDE the corpus.
+# WHY: "How did PWC perform in FY24-25" was not refused. The code knew an unknown company only by a possessive
+#      ("Reliance Industries' revenue"); otherwise it depended on the model putting the name into its slots, which
+#      it did for one wording and not for the next. Asked with a year outside the corpus as well ("PWC ... 21-22"),
+#      the reply spoke only of the year. The rule is now in code, and the guard uses the same function so that
+#      the company is named first and the year second.
+#   Three signs of a company name that is not one of the 15:
+#     1. a capitalised name with 's or ' after it           "Reliance Industries' revenue"   (the rule of 21 Nov)
+#     2. a capitalised name before a company word            "Yes Bank deposits", "Tata Motors revenue"
+#     3. an abbreviation in capitals                         "PWC", "RIL", "L&T"
+#   Not a name: finance and everyday abbreviations (EPS, ROE, MD&A, CEO ...), the agent's own vocabulary, filler
+#   words, and anything in a question typed entirely in capitals. If the question names a known company, nothing
+#   is looked for: "Infosys and its ROIC" is a question about Infosys.
+_NOT_A_NAME = set("""fy yoy qoq eps roe roa roce roic npa gnpa nnpa casa nim nii crar car cet lcr nsfr rwa pcr slr crr pat pbt ebt
+    gdp cpi wpi fii fdi dii psu sme msme npv irr roi ytd ttm saas api rpa iot hni nri otc etf reit ncd cp cd b2b b2c d2c
+    ebit ebitda mda md ceo cfo coo cto cmd kmp vp svp cagr inr rs cr bn mn usd it fmcg bfsi nbfc rbi sebi nse bse gst ifrs
+    esg brsr csr ai hr uk us usa eu kpi pdf ok pl rd ma capex opex fcf ocf dso dpo ltv ev pe pb bv nav aum arpu sga cogs
+    wacc emi kyc atm upi erp ipo agm egm esop hq faq tds mat sez""".split())
+_COMPANY_WORD = r"(?:Ltd|Limited|Industries|Bank|Corp|Corporation|Inc|Motors|Steel|Pharma|Enterprises|Technologies|Cement|Insurance|Holdings|Finance)"
+#     4. a well-known company or firm that is not in the corpus, however it is typed ("pwc", "reliance").
+#        People type in small letters in a chat, and then signs 1 to 3 see nothing. The list is a convenience and
+#        is not meant to be complete; a name that is on no list and has no sign gets "Which company do you mean?".
+_OUTSIDE_NAMES = ["PwC", "Deloitte", "KPMG", "Accenture", "Cognizant", "Capgemini", "IBM", "Mphasis", "LTIMindtree", "Mindtree",
+                  "Reliance", "Adani", "Bajaj", "Maruti", "Airtel", "Vodafone", "Paytm", "Zomato", "Swiggy", "Flipkart",
+                  "IndusInd", "PNB", "Canara Bank", "Yes Bank", "Bank of Baroda", "IDFC", "Bandhan Bank", "Federal Bank", "LIC",
+                  "Marico", "Godrej", "Colgate", "Emami", "Patanjali", "Amul", "Asian Paints", "Titan", "Sun Pharma", "Cipla",
+                  "Lupin", "JSW", "Vedanta", "Hindalco", "Coal India", "UltraTech", "Larsen", "L&T", "ONGC", "NTPC", "BPCL",
+                  "Tata Motors", "Tata Steel", "Hero MotoCorp", "Google", "Microsoft", "Amazon", "Apple", "Tesla"]
+
+
+def unknown_company(question: str) -> str | None:
+    """A name in the question that reads like a company and is not in the corpus; None if there is none."""
+    if find_companies(question):
+        return None
+    vocab = _vocabulary()
+
+    def plain(word: str) -> bool:
+        w = word.lower()
+        return w in _FILLER or w in vocab or w in _NOT_A_NAME or w.replace("&", "") in _NOT_A_NAME
+
+    m = re.search(r"\b((?!FY\d)[A-Z][\w&.-]*(?:\s+(?!FY\d)[A-Z][\w&.-]*){0,3})['\u2019]s?(?=\s|$|[?.,])", question)
+    if m and not resolve_ticker(m.group(1)) and m.group(1).lower() not in _FILLER:
+        return m.group(1)
+    for m in re.finditer(rf"\b((?:[A-Z][\w&.-]*\s+){{1,3}}{_COMPANY_WORD})\b", question):
+        words = m.group(1).split()
+        if not any(plain(w) for w in words[:-1]) and not resolve_ticker(m.group(1)):
+            return m.group(1)
+    if any(c.islower() for c in question):
+        for tok in re.findall(r"(?<![\w&])[A-Z][A-Z&]{1,4}(?![\w&])", question):
+            if not plain(tok) and not resolve_ticker(tok):
+                return tok
+    low = question.lower()
+    for name in _OUTSIDE_NAMES:
+        if re.search(rf"(?<![\w&]){re.escape(name.lower())}(?![\w&])", low):
+            return name
+    return None
+
+
+# NEW (24 Nov 2026, after trying it in the app): the sentence for a company outside the corpus.
+# WHY: "What is the Net profit of PCJ" names no year, and the reply still said "... for FY2024-25 and FY2025-26".
+#      The years are an answer to a question about a year. Now: no year in the question -> the company only;
+#      a year in the question -> the company and the years that are covered. (A year that is itself outside the
+#      corpus is refused earlier, by the guard, which names the company first and that year second.)
+def outside_message(name: str, question: str) -> str:
+    if years_in(question):
+        return f"{name} is not in my corpus. I cover 15 companies for " + " and ".join(fy_label(y) for y in fiscal_years()) + "."
+    return f"{name} is not in my corpus. I cover 15 companies."
 
 
 # The words that make a question year-on-year (15 Nov 2026: moved here so two places use the same test).
@@ -208,6 +292,47 @@ def merge_reply(pending: str, reply: str) -> str:
     return f"{base}. {reply.strip()}"
 
 
+# NEW (24 Nov 2026, mentor's review): a question about a LOSS.
+# WHY: "what is loss of Infosys for year 25-26?" was answered "Infosys's net profit was Rs 29,474 crore", as if a
+#      profit had been asked for. The figure is right and the answer is still wrong for the question: the company
+#      had no loss. The agent now reads the figure, and if it is a profit it says so and asks whether the net
+#      profit is wanted (agent/graph.py). These helpers only recognise the question and reword it for the reply.
+#      Not meant: "profit and loss", "profit or loss", and the losses a bank provides for (loan losses, credit
+#      losses, loss allowance), which are other lines of the accounts.
+LOSS_WORDS = re.compile(r"\b(net\s+)?(loss(es)?|loses)\b", re.I)
+_OTHER_LOSS = re.compile(r"\bprofits?\b|\bearnings\b|\b(loan|credit|expected|impairment|actuarial|forex|exchange|fair value)\s+loss|"
+                         r"\bloss(es)?\s+(allowance|provision|on)\b|\bprovisions?\b", re.I)
+_NO = re.compile(r"^\W*(no|nope|nah|no thanks|no thank you|not now|never ?mind|cancel|leave it)\W*$", re.I)
+
+
+def asks_for_loss(question: str) -> bool:
+    """True for a question about the loss of a company ("what is the loss of Infosys"), not about profit and loss."""
+    return bool(LOSS_WORDS.search(question)) and not _OTHER_LOSS.search(question)
+
+
+def loss_as_profit(question: str) -> str:
+    """The same question about the net profit: what a "yes" to the agent's question completes."""
+    return re.sub(r"\s+", " ", LOSS_WORDS.sub("net profit", question)).strip()
+
+
+def declines(text: str) -> bool:
+    """True for a bare "no" ("no", "no thanks", "never mind") in reply to a question of the agent."""
+    return bool(_NO.match(text or ""))
+
+
+# NEW (24 Nov 2026, later): "no" followed by what the user wants instead ("No. Revenue from operations").
+# WHY: only a bare "no" was recognised. "No. Revenue from operatiom" was joined to the unfinished question
+#      ("what is net profit of Infosys for year 25-26?") as if it completed it, and the net profit was shown: the
+#      opposite of what was typed. The part after the "no" is now taken as the new question.
+_NO_THEN = re.compile(r"^\W*(?:no thanks|no thank you|nope|nah|no)\b[\s.,;:!-]+(\S.*)$", re.I | re.S)
+
+
+def declines_then(text: str) -> str | None:
+    """The text after a leading "no" ("No. Revenue from operations" -> "Revenue from operations"), else None."""
+    m = _NO_THEN.match(text or "")
+    return m.group(1).strip() if m and not declines(text) else None
+
+
 class Clarify(Exception):
     """The question cannot be answered until the user says more."""
 
@@ -267,8 +392,9 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
     # about the same company ("What was the net profit?" after an answer about Wipro). Only when every word is
     # understood, so an unrelated question is not attached to the old company. The answer says so (graph.py
     # adds a note), and it always names the company, so the user can see what was assumed.
+    # OLD:     and not _unknown_words(question, [])
     same_company = not find_companies(question) and any(w in _vocabulary() and w not in _FILLER for w in words) \
-        and not _unknown_words(question, [])
+        and not _unknown_words(question, [], loose=True)      # 24 Nov 2026 (later): a near miss of a finance word is accepted
     # OLD (earlier today): follow = bool(memory) and (plan.is_follow_up or bool(FOLLOW_UP.search(question)) or fragment)
     follow = bool(memory) and (plan.is_follow_up or bool(FOLLOW_UP.search(question)) or fragment or same_company)
 
@@ -279,19 +405,29 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
         if t and t not in tickers and name.lower() in q:
             tickers.append(t)
         elif not t and len(name) > 2 and name.lower() in q:
-            raise Refuse("not_in_corpus", f"{name} is not in my corpus. I cover 15 companies for "
-                         + " and ".join(fy_label(y) for y in years_corpus) + ".")
+            # OLD: raise Refuse("not_in_corpus", f"{name} is not in my corpus. I cover 15 companies for "
+            #                   + " and ".join(fy_label(y) for y in years_corpus) + ".")
+            raise Refuse("not_in_corpus", outside_message(name, question))          # 24 Nov 2026: see outside_message()
     # NEW (21 Nov 2026): a company the corpus does not cover is refused by CODE, whether or not the model names it.
     # WHY: "What was Reliance Industries' revenue in FY2025-26?" is refused only if the model puts "Reliance
     #      Industries" into its slots (the block above). When it does not, the question had no company at all
     #      as far as the code could see, and the agent asked "Which company do you mean?" (found by the first
     #      evaluation run without the model). A capitalised name followed by 's or ' that is not one of the 15
     #      companies is now treated as a company outside the corpus.
+    # OLD (21 Nov 2026): only a capitalised name with a possessive was recognised here:
+    # if not tickers:
+    #     m = re.search(r"\b((?!FY\d)[A-Z][\w&.-]*(?:\s+(?!FY\d)[A-Z][\w&.-]*){0,3})['’]s?(?=\s|$|[?.,])", question)
+    #     if m and not resolve_ticker(m.group(1)) and m.group(1).lower() not in _FILLER:
+    #         raise Refuse("not_in_corpus", f"{m.group(1)} is not in my corpus. I cover 15 companies for "
+    #                      + " and ".join(fy_label(y) for y in years_corpus) + ".")
+    # CHANGED (24 Nov 2026): the same test and two more signs of a company name, in unknown_company() above.
     if not tickers:
-        m = re.search(r"\b((?!FY\d)[A-Z][\w&.-]*(?:\s+(?!FY\d)[A-Z][\w&.-]*){0,3})['’]s?(?=\s|$|[?.,])", question)
-        if m and not resolve_ticker(m.group(1)) and m.group(1).lower() not in _FILLER:
-            raise Refuse("not_in_corpus", f"{m.group(1)} is not in my corpus. I cover 15 companies for "
-                         + " and ".join(fy_label(y) for y in years_corpus) + ".")
+        outside = unknown_company(question)
+        if outside:
+            # OLD (earlier on 24 Nov 2026): the years were always named:
+            #     raise Refuse("not_in_corpus", f"{outside} is not in my corpus. I cover 15 companies for "
+            #                  + " and ".join(fy_label(y) for y in years_corpus) + ".")
+            raise Refuse("not_in_corpus", outside_message(outside, question))
     if not tickers and follow:
         tickers = list(memory.get("companies", []))
     elif follow and plan.intent == "compare_rank" and len(tickers) == 1:

@@ -1492,3 +1492,153 @@ page 255), and the "Explore further" box showed with its tint.
 
 One change after looking at that screen (`app/components.py`): the "Explore further" buttons are laid out two per
 row. Four in one row were too narrow and their text was cut off ("Same for FY202...").
+
+## 66. Update 24 Nov 2026 — mentor's review: filters removed, companies outside the corpus, people questions
+
+Found in the session with the mentor (chat screen, real model).
+
+| # | What happened | Change | Files |
+|---|---|---|---|
+| 1 | With the sidebar filter on AXISBANK, "How did PWC perform FY24-25" was sent on as "... for AXISBANK". The agent asked which figure was wanted, and the reply "netprofit" was answered with Axis Bank's net profit: an answer about a company that had not been asked about | The "Filters (optional)" section is removed from the app. A question reaches the agent exactly as it was typed. Quick lookup stays; a question that names no company gets "Which company do you mean?"; a follow-up reuses the company of the last answer and says so. Basic search now runs as in the evaluation: no filter, 5 passages | `app/streamlit_app.py` |
+| 2 | "How did PWC perform FY24-25" was refused in one wording and not in the next: an unknown company was recognised in code only by a possessive ("Reliance Industries' revenue"), otherwise it depended on the model | `unknown_company()` in code. A company outside the corpus is recognised by a possessive, by a company word after a name ("Tata Motors"), by an abbreviation in capitals ("PWC", "RIL", "L&T"), or by a short list of well-known names however typed ("pwc", "reliance"). Finance abbreviations (EPS, ROE, MD&A ...) are not names. Applied only when the question names none of the 15 companies | `agent/planner.py` |
+| 3 | "How did PWC perform in 21-22" was refused with "FY2021-22 is not in my corpus", as if PWC were covered and only the year were missing | The company first, the year second: "PWC is not in my corpus, and neither is FY2021-22. I cover 15 companies for FY2024-25 and FY2025-26." A covered company with a year outside the corpus keeps the year message | `safety/guard_rules.py` |
+| 4 | "Who is the CEO of Infosys?" got "Which figure or ratio would you like?" | New refusal reason `out_of_scope` for questions about people and general company facts (who, the name of the CEO or chairman, headquarters, when founded): "I answer questions about the figures, ratios and topics in the annual reports ... I can't answer questions about people or general company facts, such as who the CEO is." "Who will ..." stays a forecast. A summary of the chairman's statement is not touched | `safety/guard_rules.py` |
+
+After trying it in the app the same day: the reply for a company outside the corpus names the covered years only
+when the question itself names a year (`outside_message()` in `agent/planner.py`).
+
+| Question | Reply |
+|---|---|
+| "What is the Net profit of PCJ" (no year) | "PCJ is not in my corpus. I cover 15 companies." |
+| "What is the netprofit of PCJ for FY25-26" (a covered year) | "PCJ is not in my corpus. I cover 15 companies for FY2024-25 and FY2025-26." |
+| "how did PWC perform in 21-22" (a year that is not covered) | "PWC is not in my corpus, and neither is FY2021-22. I cover 15 companies for FY2024-25 and FY2025-26." |
+
+Checked without the model: the guard refuses the same 7 of the 90 evaluation questions as before, and
+`unknown_company()` fires for exactly one of the 90 (Reliance Industries, which is expected to be refused). Because
+the guard and the planner changed, one full practice run is needed before the freeze.
+
+Three prompts from this session are added to `docs/RED_TEAM_LOG.md` (group F) for a re-test in the app.
+
+**Questions the mentor asked about the search index** (answers for the team):
+
+- *What is the vector database?* Qdrant. For every chunk of report text it stores a list of 384 numbers (made by
+  the embedding model `BAAI/bge-small-en-v1.5`) that stands for the meaning of the chunk, together with the
+  chunk's company, year, section and page. A question is turned into 384 numbers the same way, and Qdrant returns
+  the chunks whose numbers are closest: text with a similar meaning, even in other words. The agent joins this
+  with a keyword search (BM25) over the same chunks and re-orders the result with a reranker.
+- *Why chunks?* (1) The 8B model cannot read a report of 300 to 700 pages; it is given a few passages. (2) A short
+  passage is about one thing, so its numbers describe it well; a whole page or report would blur. (3) A chunk
+  never crosses a page, so every chunk has exactly one page number, which becomes the citation.
+- *How are they made?* Per page: windows of 300 words, each overlapping the one before by 50 words, with a header
+  line (company, fiscal year, scope, section, page) in front (`ingest/chunk.py`).
+- *How many?* 28,703 chunks from 13,285 pages of the 30 reports: 532 to 1,287 per report, 957 on average, a little
+  over two per page.
+
+| Company | FY2024-25 chunks (pages) | FY2025-26 chunks (pages) |
+|---|---|---|
+| Axis Bank | 995 (504) | 1,016 (520) |
+| Britannia | 532 (170) | 549 (171) |
+| Dabur | 1,034 (542) | 1,139 (622) |
+| HCLTech | 870 (423) | 945 (462) |
+| HDFC Bank | 1,213 (589) | 1,282 (628) |
+| Hindustan Unilever | 922 (235) | 896 (244) |
+| ICICI Bank | 944 (459) | 697 (348) |
+| Infosys | 832 (369) | 889 (382) |
+| ITC | 963 (411) | 923 (402) |
+| Kotak Mahindra Bank | 1,143 (520) | 1,016 (464) |
+| Nestlé India | 591 (285) | 662 (303) |
+| State Bank of India | 1,143 (516) | 1,287 (591) |
+| TCS | 835 (336) | 754 (361) |
+| Tech Mahindra | 1,226 (680) | 1,244 (683) |
+| Wipro | 1,064 (519) | 1,097 (546) |
+
+- *What is the search used for?* Text only: ratios the report prints in a paragraph (CASA, NPA, net interest
+  margin), shares read from the notes, and summaries. The figures of the statements (revenue, net profit,
+  deposits ...) are not searched for; they are read from the figure store built at ingestion.
+
+2 tests added, 1 changed. Unit tests: 206 passed on Python 3.11.
+
+## 67. Update 24 Nov 2026 — mentor's review, second round: simpler chat screen, Export to PDF, questions about a loss
+
+**What was asked.** Remove Deploy, Quick lookup and Basic search from the chat screen. Show the past conversations
+as a list in the sidebar (not a drop-down): a click opens one, and a three-dot menu holds Delete. Replace the
+Draft button by "Export to PDF" that downloads the PDF directly. A question about the *loss* of a company that
+made a profit must not be answered with the profit.
+
+**The chat screen** (`app/streamlit_app.py`, `app/components.py`, new `app/pdf_export.py`, new
+`.streamlit/config.toml`):
+
+| Before | Now |
+|---|---|
+| "Deploy" button at the top right | Hidden (`toolbarMode = "viewer"` in `.streamlit/config.toml`, plus one style rule) |
+| Sidebar: Answer mode (Agent / Basic search), Quick lookup, past conversations in a drop-down with Open and Delete buttons | Sidebar: "New conversation" and the list "Past conversations" only. The list scrolls when it is long. A click on a row opens it; the "⋮" beside it holds Delete |
+| "Export as note (DRAFT)", then tick "checked" and Approve, saved under `results/notes/` | One button "Export to PDF" under every verified answer. The browser saves `FinSight_<question>.pdf` in Downloads |
+
+- The screen always uses the agent. The simple search is still in the project as an evaluation mode
+  (`python eval/run_eval.py --mode simple`); it is only no longer offered in the app.
+- The PDF holds the question, the answer, the formula, the figures with their pages, the key points with their
+  citations, the notes, and the line "Not investment advice". A long summary runs over to more pages. It is made
+  with PyMuPDF, which the project already installs; nothing new to install.
+- Only a verified answer has the button. A refusal, a clarifying question or an escalated answer cannot be exported.
+- The old code (Quick lookup, Basic search, Draft and Approve) is commented, not deleted, with the reason beside it.
+- **For the team to decide:** SPEC section 8 and decision 12 in `docs/DECISIONS.md` say an exported note is a
+  DRAFT until a person approves it. The mentor asked for a direct export, so the app now does that. The SPEC text
+  is not changed here; it needs a change note agreed by the team.
+
+**Questions about a loss** (`agent/planner.py`, `agent/graph.py`):
+
+- Before: "What is the loss of Infosys for 2025-26?" found no measure, fell back on the last one and showed the
+  net profit as if it were the answer.
+- Now: "loss" is read as a question about net profit. If the reported figure is a profit, the agent does not
+  present it as a loss. It replies: *"Infosys did not report a loss in FY2025-26; it reported a net profit. Would
+  you like the net profit instead?"* A reply "yes" gives the net profit with its citation; "no" ends it
+  ("No problem. What would you like to know instead?").
+- If a company really reports a negative net profit, the figure is shown as usual.
+- Other kinds of loss (impairment loss, loan losses, foreign-exchange loss, loss on sale) are not treated this way.
+- This is a general rule in code, not a rule for one company or one question.
+
+Because the planner and the loop changed, one full practice run (`python eval/run_eval.py`) is needed before the
+freeze. In Docker the image must be rebuilt to see the new screen.
+
+3 tests added, 2 replaced (Quick lookup, Draft and Approve), 1 rewritten (past conversations). Unit tests: 208
+passed on Python 3.11.
+
+**Later the same day, after trying the new screen** (`app/streamlit_app.py`, `app/components.py`):
+
+- The name "📊 FinSight" is shown at the top of the sidebar, in the corner that was empty.
+- The menu button beside a past conversation shows the three dots only. Streamlit draws a small down-arrow on
+  such a button and has no setting to switch it off, so the arrow is hidden by a style rule for the sidebar.
+- The first rule for the arrow did not work: in this Streamlit version the arrow is an icon written with an icon
+  font, not a picture. Each menu now sits in a container with its own key and the rule hides the icon in either form.
+- Both are style rules only; no behaviour changed. 1 test added. Unit tests: 209 passed on Python 3.11.
+
+**After trying the loss question in the app** (`agent/planner.py`, `agent/graph.py`):
+
+| Typed | Before | Now |
+|---|---|---|
+| "what are the loses of Infosys for year 25-26", then "No", then "Revenue from operation" | "Which company do you mean?", then "Which fiscal year?" | Revenue from operations of Infosys for FY2025-26, with the note that company and year were taken from the previous question |
+| The same question, then "No. Revenue from operatiom" | The net profit (the "No" was ignored) | Revenue from operations of Infosys for FY2025-26 |
+
+- Why the first happened: memory was written only after an answer. The loss question ends in a question back to
+  the user, so its company and year were not kept. They are now kept at that point (the question was understood
+  and its figure was read from the report). The net profit itself is not remembered, because the user has not
+  accepted it.
+- Why the second happened: only a bare "no" was recognised. "No" followed by other words was joined to the
+  unfinished net-profit question. The part after the "no" is now planned as a new question.
+- A figure named with a missing ending or a typing slip ("operation", "operatiom") is accepted when deciding
+  whether a question without a company continues the previous one. This looser match is used in that one place only.
+- General rules; nothing is specific to Infosys or to revenue. Unit tests: 209 passed (the loss test is extended).
+  One full practice run is needed before the freeze.
+
+**Export to PDF now gives the complete conversation** (`app/pdf_export.py`, `app/components.py`,
+`app/streamlit_app.py`):
+
+- Before: a button under every verified answer; each PDF held that one answer.
+- Now: one button, under the newest reply. Its PDF holds every question and reply of the open conversation, in
+  the order asked, numbered 1, 2, 3 ...
+- A verified answer is written in full (figures, pages, key points, sources). A reply that is not a verified
+  answer is written as one line with a label ("FinSight asked", "Refused", "Not verified"), so it cannot be
+  mistaken for a checked figure.
+- The button appears once the conversation has at least one verified answer. A past conversation opened from the
+  sidebar can be exported the same way. The file is named after the first question.
+- The agent is not changed. Unit tests: 209 passed (the export test is extended).

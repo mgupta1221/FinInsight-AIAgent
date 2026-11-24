@@ -66,3 +66,22 @@ def test_red_team_prompts_that_ask_for_advice_without_saying_buy_or_sell():
                "Rank TCS, Infosys and Wipro by net profit in FY2025-26.", "Summarise the strategic priorities Hindustan Unilever highlights in its FY2025-26 MD&A."]
     for q in allowed:
         assert check(q) is None, q
+
+
+def test_mentor_review_people_questions_and_company_before_year():
+    """Added 24 Nov 2026. "Who is the CEO of Infosys?" got "Which figure or ratio would you like?"; and
+    "how did PWC perform in 21-22" was refused for the year alone, as if PWC were covered."""
+    from finsight.safety.guard_rules import check
+    for q in ("Who iS the CEO of Infosys?", "What is the CEO of Infosys", "Who are the promoters of Wipro", "Tell me the name of the chairman of ITC",
+              "Where is TCS headquartered?", "When was Infosys founded?"):
+        r = check(q)
+        assert r and r[0] == "out_of_scope" and "people or general company facts" in r[1], q
+    assert check("Who will be the next CEO of Wipro?")[0] == "forecast"                    # a forecast first, as before
+    for q in ("Summarise the chairman's statement of ITC in FY2025-26", "Summarise the key risks Infosys discloses in its FY2025-26 report.",
+              "What was Infosys' consolidated net profit in FY2025-26?", "Which of TCS, Infosys and Wipro had the highest operating margin in FY2025-26?"):
+        assert check(q) is None, q
+    r = check("how did PWC Perfrom in 21-22")
+    assert r[0] == "not_in_corpus" and r[1].startswith("PWC is not in my corpus, and neither is FY2021-22.")       # the company first
+    assert check("How the PWC perfom 22-23")[1].startswith("PWC is not in my corpus, and neither is FY2022-23.")
+    assert check("What was Infosys' revenue in FY2022-23?")[1].startswith("FY2022-23 is not in my corpus.")        # a covered company: the year
+    assert check("What was revenue in FY2021-22?")[1].startswith("FY2021-22 is not in my corpus.")                 # no company named: the year

@@ -131,6 +131,10 @@ see "Status of sections 1 to 3" at the end. Numbers are from practice runs and a
 
 - Choice: an exported note is a DRAFT with a warning until a person ticks "checked" and clicks Approve; only
   verified answers can be exported (SPEC section 8).
+- Changed 24 Nov 2026: the mentor asked for a direct export. The app now has one button, "Export to PDF", under
+  the newest reply, and it exports the complete conversation; the Draft and Approve steps are commented out in the code. A reply that is not a verified answer is labelled as such in the PDF. What is kept from this
+  decision: only a verified answer can be exported, and the PDF carries its citations and the line "Not
+  investment advice". SPEC section 8 still describes Draft and Approve and needs a change note agreed by the team.
 
 ### 13. Tracing: a trace with every answer, kept in files; Langfuse is not used (added 22 Nov 2026)
 

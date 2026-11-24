@@ -283,3 +283,109 @@ def scroll_to_latest(st, n: int, back: int = 1) -> None:
             </script>""", height=0)
     except Exception:  # noqa: BLE001  no scrolling is better than no answer
         pass
+
+
+# NEW (24 Nov 2026, mentor's review): "Export to PDF" in place of "Export as note (DRAFT)" and "Approve".
+# WHY: the review asked for one button that downloads the answer as a PDF at once. note_controls() above is kept
+#      but no longer called by the chat screen. Two things of the earlier design stay: only an answer that passed
+#      the agent's check gets the button (can_export), and the PDF itself carries the notice "check each figure
+#      against the cited page ... not investment advice" (app/pdf_export.py).
+#      The file is built when the answer is drawn, because a download button needs its content in advance; it is
+#      kept for the session so that redrawing the page does not build it again.
+# CHANGED (24 Nov 2026, later): the button exports the COMPLETE conversation, not one answer.
+# WHY: asked for after trying it: "Export to PDF should export the complete conversation of that chat, not just
+#      the latest question". There is now one button, under the newest reply, and its PDF holds every question
+#      and reply of the open conversation (pdf_export.conversation_pdf). It is shown once the conversation has
+#      at least one verified answer; a conversation of refusals only has nothing to export.
+# OLD (one answer per button, a button under every verified answer):
+# def pdf_button(st, a, question: str, key: str) -> None:
+#     if not can_export(a):
+#         return
+#     try:
+#         import pdf_export
+#         cache = st.session_state.setdefault("pdf_cache", {})
+#         if key not in cache:
+#             cache[key] = pdf_export.answer_pdf(question, a)
+#         data, name = cache[key], pdf_export.file_name(question)
+#     except Exception:  # noqa: BLE001  no button is better than no answer
+#         return
+#     label, tip = "📄 Export to PDF", "Downloads this answer with its figures, pages and sources as a PDF file."
+#     try:
+#         st.download_button(label, data=data, file_name=name, mime="application/pdf", key=f"pdf_{key}", help=tip, on_click="ignore")
+#     except TypeError:                                           # an older Streamlit: no on_click="ignore"
+#         st.download_button(label, data=data, file_name=name, mime="application/pdf", key=f"pdf_{key}", help=tip)
+def pdf_button(st, history: list[dict], key: str, slot=None) -> None:
+    """`history`: the turns of the open conversation. `key`: unique for the conversation and its length."""
+    if not any(can_export(t.get("agent")) for t in history if t.get("agent") is not None):
+        return
+    try:
+        import pdf_export
+        cache = st.session_state.setdefault("pdf_cache", {})
+        if key not in cache:
+            cache.clear()                                       # only the newest PDF is kept in memory
+            cache[key] = pdf_export.conversation_pdf(history)
+        first = next((t.get("content") for t in history if t.get("role") == "user"), "conversation")
+        data, name = cache[key], pdf_export.file_name(first)
+    except Exception:  # noqa: BLE001  no button is better than no answer
+        return
+    label, tip = "📄 Export to PDF", "Downloads the complete conversation, with figures, pages and sources, as a PDF file."
+    try:
+        st.download_button(label, data=data, file_name=name, mime="application/pdf", key=f"pdf_{key}", help=tip, on_click="ignore")
+    except TypeError:                                           # an older Streamlit: no on_click="ignore"
+        st.download_button(label, data=data, file_name=name, mime="application/pdf", key=f"pdf_{key}", help=tip)
+
+
+# NEW (24 Nov 2026, mentor's review): past conversations as a list in the sidebar.
+# WHY: they were in a drop-down list with an "Open" and a "Delete" button under it. The review asked for the
+#      usual form of a chat application: every conversation is a line in the sidebar, a click on the line opens
+#      it, and a small menu (three dots) beside it holds "Delete". With many conversations the list scrolls.
+#      The function only draws the list and reports what was clicked; the chat screen does the opening and
+#      deleting, as before. The conversation that is open is drawn with a frame.
+def conversation_list(st, past: list[dict], current: str):
+    """Returns ("open", id), ("delete", id) or None."""
+    import history as chat_history
+    st.markdown("""<style>
+    [class*="st-key-open_"] button { justify-content: flex-start; text-align: left; padding-left: 0.6rem; }
+    [class*="st-key-open_"] button p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    </style>""", unsafe_allow_html=True)
+    # NEW (24 Nov 2026, mentor's review): only the three dots on the menu button, no arrow beside them.
+    # WHY: Streamlit draws a small down-arrow on every popover button and has no setting to switch it off, so
+    #      the arrow (an svg picture inside the button) is hidden by a style rule, for the sidebar only. The
+    #      three dots are text, so they stay.
+    # OLD (24 Nov 2026, first try), commented:
+    # st.markdown("""<style>
+    # [data-testid="stSidebar"] [data-testid="stPopover"] button svg,
+    # [data-testid="stSidebar"] [data-testid="stPopoverButton"] svg { display: none !important; }
+    # [data-testid="stSidebar"] [data-testid="stPopover"] button { padding-left: 0.3rem; padding-right: 0.3rem; }
+    # </style>""", unsafe_allow_html=True)
+    # NEW (24 Nov 2026, later). WHY: the arrow was still there. In this Streamlit version the arrow is not an svg
+    #      picture but an icon written with an icon font (stIconMaterial), so the rule above did not match it.
+    #      Each menu now sits in a container with its own key ("menu_<id>"), which gives a class name the rule can
+    #      rely on, and the rule hides the icon whichever way Streamlit draws it.
+    st.markdown("""<style>
+    [class*="st-key-menu_"] button [data-testid="stIconMaterial"],
+    [class*="st-key-menu_"] button svg,
+    [class*="st-key-menu_"] button > div > :last-child:not(:first-child) { display: none !important; }
+    [class*="st-key-menu_"] button { padding-left: 0.3rem; padding-right: 0.3rem; }
+    </style>""", unsafe_allow_html=True)
+    st.caption("Past conversations")
+    box = st.container(height=440, border=False) if len(past) > 9 else st.container()
+    clicked = None
+    with box:
+        for c in past:
+            line, menu = st.columns([0.8, 0.2], vertical_alignment="center")
+            n = c.get("questions", 0)
+            tip = f"{c['title']}  \n{chat_history.when(c['at'])} · {n} question{'s' if n != 1 else ''}"
+            if line.button(chat_history.label(c["title"], 28), key=f"open_{c['id']}", help=tip, use_container_width=True,
+                           type="secondary" if c["id"] == current else "tertiary"):
+                clicked = ("open", c["id"])
+            # OLD (24 Nov 2026), commented: the popover straight in the column.
+            # with menu.popover("⋮", use_container_width=True):
+            #     if st.button("Delete", key=f"del_{c['id']}", use_container_width=True):
+            #         clicked = ("delete", c["id"])
+            # NEW: the same popover inside a container with a key, so the style rule above can find its button.
+            with menu.container(key=f"menu_{c['id']}"):
+                with st.popover("⋮", use_container_width=True):
+                    if st.button("Delete", key=f"del_{c['id']}", use_container_width=True):
+                        clicked = ("delete", c["id"])
+    return clicked
