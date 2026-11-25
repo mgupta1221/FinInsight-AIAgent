@@ -118,7 +118,8 @@ python scripts\endpoint_check.py
 python -m pytest -q
 ```
 
-Expected: **204 passed**.
+<!-- 24 Nov 2026: was 206 passed before the tests for the new chat screen and the loss question -->
+Expected: **209 passed**.
 
 ## 8\. Build the figure store (needed for number questions)
 
@@ -153,7 +154,10 @@ python scripts\ask.py --reset
 
 `--trace` prints every step. `--reset` clears the conversation memory. `--session NAME` keeps separate conversations.
 
+<!-- Changed 24 Nov 2026: the sidebar no longer has the "Basic search" switch (removed after the mentor's review). Old text:
 Chat screen in the browser. It uses the agent by default and shows the answer, the formula, the figures used with their pages, and a "How I got this" trace. The sidebar has a switch to "Basic search (baseline, no checks)", which is one search and one model answer without the agent, and a "New conversation" button that starts a fresh conversation:
+-->
+Chat screen in the browser. It always uses the agent and shows the answer, the formula, the figures used with their pages, and a "How I got this" trace. The sidebar has a "New conversation" button and the list of past conversations: click one to open it, or use the "⋮" beside it to delete it. Under the newest reply, "Export to PDF" saves the complete conversation as a PDF in the Downloads folder:
 
 ```
 streamlit run app\streamlit_app.py
@@ -175,12 +179,20 @@ streamlit run app\streamlit_app.py
 | `ModuleNotFoundError: finsight` | The venv is not active, or step 3 was skipped |
 
 &nbsp;
+<!-- Changed 24 Nov 2026: Quick lookup was removed from the chat screen after the mentor's review; every question is typed in the chat box. Old section:
 ## Quick lookup in the chat screen (added 19 Nov 2026)
 
 Nothing new to install. Start the chat screen as before (`streamlit run app/streamlit_app.py`). In the sidebar,
 under "Quick lookup": pick a sector, one or more companies, a figure or ratio, a year and the scope, then press
 "Get answer". Pick two or more companies to compare them. The list of figures changes with the sector (bank
 figures for banks). You can still type any question in the chat box.
+-->
+## The chat screen after the mentor's review (changed 24 Nov 2026)
+
+Nothing new to install. Quick lookup, the Basic search switch and the Deploy button are removed. The sidebar
+holds "New conversation" and the past conversations. "Export to PDF" under a verified answer replaces the
+Draft and Approve buttons. If the Deploy button or the old sidebar still shows, stop the app and start it
+again; with Docker, rebuild the image.
 
 ## Run the evaluation (added 21 Nov 2026)
 

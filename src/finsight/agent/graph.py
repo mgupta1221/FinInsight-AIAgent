@@ -95,6 +95,22 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
 
     # 2. planner (model fills slots; code validates them)
     # OLD: slots = memory.get(session_id)
+    # NEW (24 Nov 2026): "no" in reply to a question of the agent drops the unfinished question.
+    # WHY: a reply is joined to the question it answers. "no" joined to "... Would you like the net profit instead?"
+    #      was read as part of that question and answered it. A bare "no" now ends it.
+    if pending and planner.declines(question):
+        msg = "No problem. What would you like to know instead?"
+        trace.append({"node": "planner", "note": "the user said no to my question; the unfinished question is dropped"})
+        return done(AgentAnswer(status="clarify", clarifying_question=msg, answer=msg))
+    # NEW (24 Nov 2026, later): "No. Revenue from operations" = no to my question, and a new question after it.
+    # WHY: see planner.declines_then(). The unfinished question is dropped and only the part after the "no" is
+    #      planned. Company and year come from memory as for any follow-up (see the loss block below, which now
+    #      remembers them).
+    if pending and planner.declines_then(question):
+        question = planner.declines_then(question)
+        pending = None
+        trace.append({"node": "planner", "note": "the user said no to my question and asked something else", "question": question})
+
     slots = {k: v for k, v in memory.get(session_id).items() if not k.startswith("_")}      # "_pending" is not a slot
     # NEW (17 Nov 2026): complete the unfinished question with the reply, and plan THAT text. A message that
     # reads like a new question of its own is left alone and the unfinished one is simply dropped.
@@ -180,6 +196,31 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
         return done(AgentAnswer(status="escalated", answer="I could not complete this reliably. Please try again."))
     if over_budget():
         return done(AgentAnswer(status="escalated", answer="I stopped because the token budget for one question was used up."))
+
+    # NEW (24 Nov 2026, mentor's review): asked for a LOSS, and the figure read from the report is a PROFIT.
+    # WHY: see planner.asks_for_loss(). The figure is read first, so the reply is based on the report and not on
+    #      a guess; if the company really made a loss (a negative figure), the answer is given as usual. The
+    #      question, reworded for the net profit, is kept for one reply, so "yes" or "net profit" completes it.
+    if plan.intent == "fact" and plan.item == "net_profit" and planner.asks_for_loss(asked):
+        read = [v.get("value") for v in result.get("values", {}).values()]
+        if read and all(isinstance(v, (int, float)) and v > 0 for v in read):
+            from finsight.tools.get_company_profile import get_company_profile
+            names = " and ".join(get_company_profile(t)["name"] for t in plan.companies)
+            year = fy_label(plan.fiscal_years[-1]) if plan.fiscal_years else "that year"
+            msg = (f"{names} did not report a loss in {year}; {'it' if len(plan.companies) == 1 else 'they'} reported a net profit. "
+                   "Would you like the net profit instead?")
+            # NEW (24 Nov 2026, later): remember the company, year and scope of this question.
+            # WHY: memory was written only after an answer. After "what are the losses of Infosys for 25-26" and
+            #      "no", the next message "Revenue from operation" found no company and no year, and the agent
+            #      asked for both although the user had just named them. The question was understood and its
+            #      figure was read from the report, so its company and year are safe to carry over. The figure
+            #      itself (net profit) is NOT remembered: the user has not accepted it yet.
+            memory.save(session_id, {"companies": plan.companies, "fiscal_years": plan.fiscal_years, "scope": plan.scope,
+                                     "metric": None, "item": None, "intent": plan.intent})
+            memory.set_pending(session_id, planner.loss_as_profit(asked))
+            trace.append({"node": "planner", "note": "a loss was asked for; the figure read is a profit", "clarify": msg})
+            return done(AgentAnswer(status="clarify", intent=plan.intent, companies=plan.companies, fiscal_years=plan.fiscal_years,
+                                    clarifying_question=msg, answer=msg))
 
     # 4. writer + 5. critic (rewrite at most twice; the last attempt is the code template)
     # OLD: expected = writer.formula_for(plan) if plan.intent != "summary" else None

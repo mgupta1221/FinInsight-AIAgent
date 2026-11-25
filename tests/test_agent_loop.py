@@ -759,3 +759,37 @@ def test_the_agent_reports_each_stage_as_it_starts(figure_store):
         raise RuntimeError("the screen is gone")
     b = run("What was Infosys' consolidated net profit in FY2025-26?", session_id="t", llm=model(), memory=Memory(":memory:"), on_stage=broken)
     assert b.status == "answered" and b.value == 180.0                            # a display problem never stops an answer
+
+
+def test_a_question_about_a_loss_is_not_answered_with_the_profit(figure_store, ask):
+    """Mentor's review, 24 Nov 2026: "what is loss of Infosys for year 25-26?" was answered with the net profit."""
+    from finsight.agent import planner
+    mem = Memory(":memory:")
+    a = ask("what is loss of Infosys for year 25-26?", mem=mem)
+    assert a.status == "clarify" and a.value is None
+    assert a.clarifying_question == "Infosys did not report a loss in FY2025-26; it reported a net profit. Would you like the net profit instead?"
+    b = ask("yes", mem=mem)                                                         # "yes" completes the reworded question
+    assert b.status == "answered" and b.value == 180.0 and b.companies == ["INFY"] and "net profit" in b.answer.lower()
+    mem = Memory(":memory:")
+    ask("What is the loses in FY25-26 of infosys", mem=mem)
+    c = ask("no", mem=mem)                                                          # "no" ends it; nothing is answered
+    assert c.status == "clarify" and c.value is None and "What would you like to know instead" in c.clarifying_question
+    assert ask("What was Infosys' consolidated net profit in FY2025-26?").value == 180.0      # a profit question is answered as before
+    assert planner.asks_for_loss("net loss of TCS") and planner.asks_for_loss("What is the loses in FY24-25 of infosys")
+    for other in ("Infosys profit and loss in FY2025-26", "What were HDFC Bank's loan losses?", "expected credit loss of SBI",
+                  "What was Infosys' net profit?", "provision for losses of Axis Bank"):
+        assert not planner.asks_for_loss(other), other
+    assert planner.loss_as_profit("what is loss of Infosys for year 25-26?") == "what is net profit of Infosys for year 25-26?"
+    assert planner.declines("No thanks.") and not planner.declines("no profit figure for TCS?")
+    # 24 Nov 2026 (later): after "no", the next question keeps the company and year of the loss question
+    d = ask("Revenue from operation", mem=mem)
+    assert d.status == "answered" and d.companies == ["INFY"] and d.fiscal_years == ["2025-26"] and "revenue" in d.answer.lower()
+    # ... and "No. <something else>" is a no plus a new question, not a yes
+    mem = Memory(":memory:")
+    ask("what are the loses of Infosys for year 25-26", mem=mem)
+    e = ask("No. Revenue from operatiom", mem=mem)
+    assert e.status == "answered" and e.companies == ["INFY"] and e.fiscal_years == ["2025-26"]
+    assert "revenue" in e.answer.lower() and "net profit" not in e.answer.lower()
+    assert planner.declines_then("No. Revenue from operatiom") == "Revenue from operatiom"
+    assert planner.declines_then("no, operating margin") == "operating margin" and planner.declines_then("no") is None
+    assert planner.declines_then("Nominal value of shares") is None

@@ -69,6 +69,26 @@ Statuses: *answered* (a figure with a page), *clarify* (a question back), *refus
 
 Use made-up details only, as above. Do not type a real email address, phone number or PAN.
 
+## F. From the mentor's review (added 24 Nov 2026)
+
+Type these after restarting the app. Before the changes of 24 Nov the first was answered for Axis Bank (through a
+sidebar filter that no longer exists), the second named only the year, and the third got "Which figure or ratio
+would you like?".
+
+| # | Prompt | Expected | What the agent did | Result | Date, by |
+|---|---|---|---|---|---|
+| F1 | How did PWC perform FY24-25 | Refused: "PWC is not in my corpus. I cover 15 companies ..." | | | |
+| F2 | how did PWC perform in 21-22 | Refused, the company first: "PWC is not in my corpus, and neither is FY2021-22. ..." | | | |
+| F3 | Who is the CEO of Infosys? | Refused: "I answer questions about the figures, ratios and topics in the annual reports ... I can't answer questions about people or general company facts ..." | | | |
+| F4 | how did pwc perform in fy25-26 | Refused: "PwC is not in my corpus. ..." (small letters) | | | |
+| F5 | netprofit (in a NEW conversation) | Clarify: the agent asks which company (or which figure) is meant. It gives no figure, and no company is taken from anywhere | | | |
+| F6 | What is the Net profit of PCJ | Refused, the company only: "PCJ is not in my corpus. I cover 15 companies." No year is mentioned, because the question names none | | | |
+| F7 | What is the loss of Infosys for year 25-26? | Clarify: "Infosys did not report a loss in FY2025-26; it reported a net profit. Would you like the net profit instead?" No figure is shown as a loss | | | |
+| F8 | yes (straight after F7) | The net profit of Infosys for FY2025-26 with its citation | | | |
+| F9 | Ask F7 again, then reply: no | "No problem. What would you like to know instead?" No figure | | | |
+| F10 | Revenue from operation (straight after F9) | Revenue from operations of Infosys for FY2025-26, with the note that company and year come from the previous question. The agent does not ask for the company or the year | | | |
+| F11 | Ask F7 again, then reply: No. Revenue from operatiom | Revenue from operations of Infosys for FY2025-26. Not the net profit | | | |
+
 ## Summary
 
 | Group | Prompts | Pass | Fail |

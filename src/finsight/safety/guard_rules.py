@@ -52,6 +52,18 @@ RULES: list[tuple[str, re.Pattern]] = [
                             r"\bin the (coming|next) (year|years|quarter)\b|"r"\b(predict|forecast|project(ion)?|estimate)\w*\b.*\b(revenue|profit|earnings|results|margin|growth|price)|"
                             r"\bwill\b.*\b(revenue|profit|earnings|share price|stock)\b.*\b(be|grow|rise|fall|increase|decrease)|"
                             r"next (year|quarter)'?s? (revenue|profit|earnings|results)", re.I)),
+    # NEW (24 Nov 2026, mentor's review): questions about people and general facts of a company.
+    # WHY: "Who is the CEO of Infosys?" got the reply "Which figure or ratio would you like?". The question asks for
+    #      no figure at all; the agent answers figures, ratios and summaries of report topics. It is now refused
+    #      with a sentence that says so. "who will ..." stays a forecast (the rule above comes first). A summary
+    #      of what the chairman or the CEO WROTE ("summarise the chairman's statement") is not touched.
+    ("out_of_scope", re.compile(r"\bwho\b|\bwhose\b|"
+                                r"\b(what|which|tell me|give me|show me)\b[^?]{0,40}\b(ceo|cfo|coo|cto|chairman|chairperson|chairwoman|"
+                                r"managing director|founders?|promoters?|company secretary|board members?)\b"
+                                r"(?!['\u2019]s? (statement|message|letter|review|commentary|report|speech))|"
+                                r"\bnames? of (the )?(ceo|cfo|coo|cto|chairman|chairperson|managing director|founders?|promoters?|directors?|auditors?)\b|"
+                                r"\bhead ?quarter\w*|\bhead office\b|\bregistered office\b|"
+                                r"\bwhen was\b.*\b(founded|incorporated|established|started)\b|\b(founded|incorporated|established) in\b", re.I)),
     ("non_public", re.compile(r"insider|non-?public|unannounced|confidential|leak(ed)?\b|upcoming results", re.I)),
     ("tax_legal", re.compile(r"tax (implication|liabilit|treatment|advice)|capital gains|legal advice|"
                              r"how (should|do|can) i (report|file|declare)|can i sue", re.I)),
@@ -72,6 +84,9 @@ def message(reason: str) -> str:
         "market_data": "Share prices and market valuations are not in the annual reports, so I can't answer that. "
                        "I can give figures the reports state, such as revenue, net profit or earnings per share.",
         "not_annual": f"I only cover full fiscal years ({_years_text()}), not quarters or half years.",
+        "out_of_scope": "I answer questions about the figures, ratios and topics in the annual reports, such as revenue, "
+                        "net profit, operating margin or key risks. I can't answer questions about people or general "
+                        "company facts, such as who the CEO is.",
         "non_public": "I only use the published annual reports, so I can't help with non-public information.",
         "tax_legal": "I can't give tax or legal advice. I can answer questions about the published annual reports.",
         "injection": "I can't follow instructions that change my rules. Ask me about the annual reports in my corpus.",
@@ -86,5 +101,17 @@ def check(question: str) -> tuple[str, str] | None:
             return reason, message(reason)
     bad = [y for y in years_in(question) if y not in known_years()]
     if bad:
+        # NEW (24 Nov 2026, mentor's review): the company first, the year second.
+        # WHY: "How did PWC perform in 21-22" was refused with "FY2021-22 is not in my corpus", as if PWC were
+        #      covered and only the year were missing. If the question names a company outside the corpus, the
+        #      reply now says so first and mentions the year after it. The test is planner.unknown_company().
+        try:
+            from finsight.agent.planner import unknown_company
+            outside = unknown_company(question)
+        except Exception:  # noqa: BLE001  the year message below is always a correct refusal
+            outside = None
+        if outside:
+            return "not_in_corpus", (f"{outside} is not in my corpus, and neither is {fy_label(bad[0])}. "
+                                     f"I cover 15 companies for {_years_text()}.")
         return "not_in_corpus", f"{fy_label(bad[0])} is not in my corpus. I cover {_years_text()}."
     return None

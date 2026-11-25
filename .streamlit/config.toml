@@ -1,0 +1,8 @@
+# Streamlit settings for the FinSight chat screen.
+#
+# ADDED 24 Nov 2026 (mentor's review): the "Deploy" button at the top right is hidden.
+# WHY: it belongs to Streamlit's own hosting service, which this project does not use; on the screen it looked like
+#      a function of FinSight. "viewer" hides the developer options of the toolbar, the Deploy button among them.
+#      Streamlit reads this file from the folder the app is started in (the project folder).
+[client]
+toolbarMode = "viewer"

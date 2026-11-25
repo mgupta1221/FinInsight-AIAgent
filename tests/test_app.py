@@ -61,19 +61,35 @@ def test_chat_screen_uses_the_agent(figure_store, monkeypatch):
     assert "1,000.00 crore" in shown and "INFY-FY2526-p287" in shown          # answer + citation on screen
     assert tables(at) and at.expander                                              # figures table + "How I got this"
 
-    at.selectbox(key="filter_company").set_value("INFY").run()   # 19 Nov 2026: picked by key, the sidebar has more pickers now                                      # sidebar company filter
+    # OLD (until 24 Nov 2026): the sidebar filters were tested here. They are removed (mentor's review):
+    # at.selectbox(key="filter_company").set_value("INFY").run()   # 19 Nov 2026: picked by key, the sidebar has more pickers now                                      # sidebar company filter
+    # at.chat_input[0].set_value("What was the net profit in FY2025-26?").run()
+    # assert seen[-1].endswith("for INFY") and not at.exception
+    # at.chat_input[0].set_value("Should I buy TCS shares?").run()
+    # assert at.warning and "investment advice" in at.warning[0].value
+    # # added 17 Nov 2026: touching a sidebar filter redraws the page; earlier answers must keep their full cards
+    # # OLD: n_tables, expanders = len(tables(at)), len(at.expander)
+    # # CHANGED (22 Nov 2026): only the "How I got this" boxes are counted; the sidebar now also has a
+    # # "Past conversations" box once a question has been stored.
+    # traces = lambda: [e for e in at.expander if e.label.startswith("How I got this")]   # noqa: E731
+    # n_tables, expanders = len(tables(at)), len(traces())
+    # assert n_tables == 2 and expanders == 3                                        # two answers with figures, three traces
+    # at.selectbox(key="filter_fy").set_value("2024-25").run()   # 19 Nov 2026: picked by key, the sidebar has more pickers now
+    # assert not at.exception and (len(tables(at)), len(traces())) == (n_tables, expanders)
+    # NEW (24 Nov 2026): no filter exists, and a question reaches the agent exactly as it was typed.
+    assert not [w for w in at.selectbox if (w.key or "").startswith("filter_")] and not at.slider
     at.chat_input[0].set_value("What was the net profit in FY2025-26?").run()
-    assert seen[-1].endswith("for INFY") and not at.exception
+    assert seen[-1] == "What was the net profit in FY2025-26?" and not at.exception          # nothing is added to it
+    assert at.info and "Which company" in at.info[-1].value                                  # so the agent asks; it does not guess
     at.chat_input[0].set_value("Should I buy TCS shares?").run()
     assert at.warning and "investment advice" in at.warning[0].value
-    # added 17 Nov 2026: touching a sidebar filter redraws the page; earlier answers must keep their full cards
-    # OLD: n_tables, expanders = len(tables(at)), len(at.expander)
-    # CHANGED (22 Nov 2026): only the "How I got this" boxes are counted; the sidebar now also has a
-    # "Past conversations" box once a question has been stored.
+    # touching a sidebar picker redraws the page; earlier answers must keep their full cards
     traces = lambda: [e for e in at.expander if e.label.startswith("How I got this")]   # noqa: E731
     n_tables, expanders = len(tables(at)), len(traces())
-    assert n_tables == 2 and expanders == 3                                        # two answers with figures, three traces
-    at.selectbox(key="filter_fy").set_value("2024-25").run()   # 19 Nov 2026: picked by key, the sidebar has more pickers now
+    assert n_tables == 1 and expanders == 3                                        # one answer with figures, three traces
+    # OLD: at.selectbox(key="lk_sector").set_value("Banks").run()      (Quick lookup is removed, later on 24 Nov 2026)
+    assert not at.radio and not at.selectbox and not at.multiselect                # no answer mode, no pickers
+    at.run()                                                                       # the page is drawn again
     assert not at.exception and (len(tables(at)), len(traces())) == (n_tables, expanders)
     assert at.warning and "investment advice" in at.warning[0].value            # the refusal is still shown as a refusal
 
@@ -116,42 +132,43 @@ def test_lookup_lists_follow_the_sector_and_build_the_three_kinds_of_question():
     assert plan.intent == "yoy" and plan.item == "net_profit" and plan.fiscal_years == ["2024-25", "2025-26"]
 
 
-def test_quick_lookup_button_asks_the_agent(figure_store, monkeypatch):
-    pytest.importorskip("streamlit")
-    from streamlit.testing.v1 import AppTest
-    import finsight.agent.graph as graph
-    real_run, seen = graph.run, []
-
-    def scripted_run(question, session_id="default", **_):
-        seen.append(question)
-        return real_run(question, session_id=session_id, llm=model(), memory=Memory(":memory:"))
-    monkeypatch.setattr(graph, "run", scripted_run)
-
-    at = AppTest.from_file(str(APP / "streamlit_app.py"), default_timeout=30).run()
-    # OLD: assert at.selectbox(key="lk_sector").value == "IT services"   (and the figure list was read straight away)
-    # CHANGED (22 Nov 2026): the Quick lookup starts empty; nothing can be asked until everything is chosen.
-    assert at.selectbox(key="lk_sector").value is None and at.selectbox(key="lk_figure_none").value is None
-    assert at.multiselect(key="lk_companies_None").value == [] and at.button(key="lk_go").disabled
-    at.selectbox(key="lk_sector").set_value("IT services").run()
-    assert at.multiselect(key="lk_companies_IT services").value == [] and at.button(key="lk_go").disabled
-    labels = at.selectbox(key="lk_figure_False").options
-    assert any("Operating margin" in str(x) for x in labels) and not any("CASA" in str(x) for x in labels)
-    at.selectbox(key="lk_sector").set_value("Banks").run()
-    labels = [str(x) for x in at.selectbox(key="lk_figure_True").options]
-    assert any("CASA" in x for x in labels) and not any("Operating margin" in x for x in labels)
-    at.selectbox(key="lk_sector").set_value("IT services").run()
-    at.multiselect(key="lk_companies_IT services").set_value(["Infosys"]).run()
-    assert at.button(key="lk_go").disabled and not seen                          # 22 Nov 2026: figure and year not chosen yet
-    figure = at.selectbox(key="lk_figure_False")
-    figure.set_value(next(o for o in lookups_options(False) if o[0] == "Revenue from operations")).run()
-    year = next(s for s in at.selectbox if str(s.key).startswith("lk_year_"))
-    assert year.value is None and at.button(key="lk_go").disabled
-    year.set_value("2025-26").run()
-    assert not at.button(key="lk_go").disabled
-    at.button(key="lk_go").click().run()
-    assert not at.exception and seen and "Infosys" in seen[-1] and "FY2025-26" in seen[-1]
-    assert any("Infosys" in m.value for m in at.markdown)                        # the built question is shown in the chat
-
+# OLD TEST (Quick lookup was removed from the screen on 24 Nov 2026; the lists in app/lookups.py are still tested above and below), kept as comments:
+# def test_quick_lookup_button_asks_the_agent(figure_store, monkeypatch):
+#     pytest.importorskip("streamlit")
+#     from streamlit.testing.v1 import AppTest
+#     import finsight.agent.graph as graph
+#     real_run, seen = graph.run, []
+#
+#     def scripted_run(question, session_id="default", **_):
+#         seen.append(question)
+#         return real_run(question, session_id=session_id, llm=model(), memory=Memory(":memory:"))
+#     monkeypatch.setattr(graph, "run", scripted_run)
+#
+#     at = AppTest.from_file(str(APP / "streamlit_app.py"), default_timeout=30).run()
+#     # OLD: assert at.selectbox(key="lk_sector").value == "IT services"   (and the figure list was read straight away)
+#     # CHANGED (22 Nov 2026): the Quick lookup starts empty; nothing can be asked until everything is chosen.
+#     assert at.selectbox(key="lk_sector").value is None and at.selectbox(key="lk_figure_none").value is None
+#     assert at.multiselect(key="lk_companies_None").value == [] and at.button(key="lk_go").disabled
+#     at.selectbox(key="lk_sector").set_value("IT services").run()
+#     assert at.multiselect(key="lk_companies_IT services").value == [] and at.button(key="lk_go").disabled
+#     labels = at.selectbox(key="lk_figure_False").options
+#     assert any("Operating margin" in str(x) for x in labels) and not any("CASA" in str(x) for x in labels)
+#     at.selectbox(key="lk_sector").set_value("Banks").run()
+#     labels = [str(x) for x in at.selectbox(key="lk_figure_True").options]
+#     assert any("CASA" in x for x in labels) and not any("Operating margin" in x for x in labels)
+#     at.selectbox(key="lk_sector").set_value("IT services").run()
+#     at.multiselect(key="lk_companies_IT services").set_value(["Infosys"]).run()
+#     assert at.button(key="lk_go").disabled and not seen                          # 22 Nov 2026: figure and year not chosen yet
+#     figure = at.selectbox(key="lk_figure_False")
+#     figure.set_value(next(o for o in lookups_options(False) if o[0] == "Revenue from operations")).run()
+#     year = next(s for s in at.selectbox if str(s.key).startswith("lk_year_"))
+#     assert year.value is None and at.button(key="lk_go").disabled
+#     year.set_value("2025-26").run()
+#     assert not at.button(key="lk_go").disabled
+#     at.button(key="lk_go").click().run()
+#     assert not at.exception and seen and "Infosys" in seen[-1] and "FY2025-26" in seen[-1]
+#     assert any("Infosys" in m.value for m in at.markdown)                        # the built question is shown in the chat
+#
 
 def test_bank_ratios_stated_for_the_bank_itself_have_no_scope_choice():
     """Real run, 19 Nov 2026: "ICICI Bank's consolidated CASA ratio" could not be found; it exists standalone only."""
@@ -202,14 +219,26 @@ def test_chat_screen_keeps_a_conversation_and_opens_it_again(figure_store, monke
     next(b for b in at.button if b.label == "New conversation").click().run()
     assert not at.exception and len(tables(at)) == 0 and at.session_state.session_id != first
 
+    # OLD (until 24 Nov 2026): a drop-down list with an "Open" and a "Delete" button:
+    # again = AppTest.from_file(str(APP / "streamlit_app.py"), default_timeout=30).run()      # the app is started again
+    # assert not again.exception and len(tables(again)) == 0
+    # assert again.selectbox(key="past_pick").options and "What was Infosys" in again.selectbox(key="past_pick").options[0]
+    # again.button(key="past_open").click().run()
+    # assert not again.exception and again.session_state.session_id == first
+    # assert len(tables(again)) == 1 and "1,000.00 crore" in " ".join(m.value for m in again.markdown)   # the full card is back
+    # again.button(key="past_delete").click().run()
+    # assert not again.exception and len(tables(again)) == 0 and not [s for s in again.selectbox if s.key == "past_pick"]
+    # NEW (24 Nov 2026): one line per conversation; a click on the line opens it, "Delete" is in the menu beside it
     again = AppTest.from_file(str(APP / "streamlit_app.py"), default_timeout=30).run()      # the app is started again
-    assert not again.exception and len(tables(again)) == 0
-    assert again.selectbox(key="past_pick").options and "What was Infosys" in again.selectbox(key="past_pick").options[0]
-    again.button(key="past_open").click().run()
+    assert not again.exception and len(tables(again)) == 0 and not again.selectbox
+    line = again.button(key=f"open_{first}")
+    assert line.label.startswith("What was Infosys") and len(line.label) <= 28
+    line.click().run()
     assert not again.exception and again.session_state.session_id == first
     assert len(tables(again)) == 1 and "1,000.00 crore" in " ".join(m.value for m in again.markdown)   # the full card is back
-    again.button(key="past_delete").click().run()
-    assert not again.exception and len(tables(again)) == 0 and not [s for s in again.selectbox if s.key == "past_pick"]
+    again.button(key=f"del_{first}").click().run()
+    assert not again.exception and len(tables(again)) == 0
+    assert not [b for b in again.button if (b.key or "").startswith(("open_", "del_"))]             # the list is empty again
 
 
 # ---- added 22 Nov 2026: DRAFT note and Approve (SPEC section 8) ----
@@ -222,37 +251,38 @@ def test_only_a_verified_answer_can_become_a_note():
     assert not can_export(AgentAnswer(status="clarify", clarifying_question="Which company?"))
 
 
-def test_note_is_a_draft_until_a_person_approves_it(figure_store, monkeypatch, tmp_path):
-    pytest.importorskip("streamlit")
-    from streamlit.testing.v1 import AppTest
-    import finsight.agent.graph as graph
-    import finsight.tools.create_note_draft as nd
-    from finsight.config import settings
-    monkeypatch.setattr(settings, "memory_db", str(tmp_path / "memory.sqlite"))
-    monkeypatch.setattr(nd, "NOTES_DIR", tmp_path / "notes")
-    real_run = graph.run
-    monkeypatch.setattr(graph, "run", lambda question, session_id="default", **_: real_run(question, session_id=session_id, llm=model(), memory=Memory(":memory:")))
-    files = lambda: sorted(p.name for p in (tmp_path / "notes").glob("*.md"))   # noqa: E731
-    button = lambda at, start: [b for b in at.button if (b.key or "").startswith(start)]   # noqa: E731
-
-    at = AppTest.from_file(str(APP / "streamlit_app.py"), default_timeout=30).run()
-    at.chat_input[0].set_value("Should I buy TCS shares?").run()
-    assert not at.exception and not button(at, "note_draft_")                    # a refusal has no Export button
-    at.chat_input[0].set_value("What was Infosys' consolidated revenue from operations in FY2025-26?").run()
-    assert not at.exception and len(button(at, "note_draft_")) == 1
-    button(at, "note_draft_")[0].click().run()
-    assert not at.exception and len(files()) == 1 and files()[0].endswith("-DRAFT.md")
-    draft = (tmp_path / "notes" / files()[0]).read_text(encoding="utf-8")
-    assert "DRAFT. AI-generated." in draft and "1,000.00" in draft and "INFY-FY2526-p287" in draft
-    approve = button(at, "note_approve_")[0]
-    assert approve.disabled                                                     # not before the reader confirms the check
-    next(c for c in at.checkbox if (c.key or "").startswith("note_checked_")).check().run()
-    button(at, "note_approve_")[0].click().run()
-    assert not at.exception and len(files()) == 2
-    final = next(f for f in files() if not f.endswith("-DRAFT.md"))
-    assert "DRAFT" not in (tmp_path / "notes" / final).read_text(encoding="utf-8")
-    assert any("Approved" in s.value for s in at.success) and not button(at, "note_approve_")
-
+# OLD TEST (the DRAFT and Approve buttons were replaced by Export to PDF on 24 Nov 2026), kept as comments:
+# def test_note_is_a_draft_until_a_person_approves_it(figure_store, monkeypatch, tmp_path):
+#     pytest.importorskip("streamlit")
+#     from streamlit.testing.v1 import AppTest
+#     import finsight.agent.graph as graph
+#     import finsight.tools.create_note_draft as nd
+#     from finsight.config import settings
+#     monkeypatch.setattr(settings, "memory_db", str(tmp_path / "memory.sqlite"))
+#     monkeypatch.setattr(nd, "NOTES_DIR", tmp_path / "notes")
+#     real_run = graph.run
+#     monkeypatch.setattr(graph, "run", lambda question, session_id="default", **_: real_run(question, session_id=session_id, llm=model(), memory=Memory(":memory:")))
+#     files = lambda: sorted(p.name for p in (tmp_path / "notes").glob("*.md"))   # noqa: E731
+#     button = lambda at, start: [b for b in at.button if (b.key or "").startswith(start)]   # noqa: E731
+#
+#     at = AppTest.from_file(str(APP / "streamlit_app.py"), default_timeout=30).run()
+#     at.chat_input[0].set_value("Should I buy TCS shares?").run()
+#     assert not at.exception and not button(at, "note_draft_")                    # a refusal has no Export button
+#     at.chat_input[0].set_value("What was Infosys' consolidated revenue from operations in FY2025-26?").run()
+#     assert not at.exception and len(button(at, "note_draft_")) == 1
+#     button(at, "note_draft_")[0].click().run()
+#     assert not at.exception and len(files()) == 1 and files()[0].endswith("-DRAFT.md")
+#     draft = (tmp_path / "notes" / files()[0]).read_text(encoding="utf-8")
+#     assert "DRAFT. AI-generated." in draft and "1,000.00" in draft and "INFY-FY2526-p287" in draft
+#     approve = button(at, "note_approve_")[0]
+#     assert approve.disabled                                                     # not before the reader confirms the check
+#     next(c for c in at.checkbox if (c.key or "").startswith("note_checked_")).check().run()
+#     button(at, "note_approve_")[0].click().run()
+#     assert not at.exception and len(files()) == 2
+#     final = next(f for f in files() if not f.endswith("-DRAFT.md"))
+#     assert "DRAFT" not in (tmp_path / "notes" / final).read_text(encoding="utf-8")
+#     assert any("Approved" in s.value for s in at.success) and not button(at, "note_approve_")
+#
 
 def test_stage_line_is_gone_once_the_answer_is_shown(figure_store, monkeypatch):
     """Added 22 Nov 2026: the stages are shown only while the agent works; nothing of them stays on the page."""
@@ -411,3 +441,102 @@ def test_a_clicked_suggestion_is_asked_like_a_typed_question(figure_store, monke
     assert len(seen) == 2 and any(m.value == seen[-1] for m in at.markdown)        # asked once, and shown as the user's question
     newest = [b for b in at.button if (b.key or "").startswith("suggest_")]
     assert all(b.key != buttons[0].key for b in newest)                            # the earlier answer no longer carries suggestions
+
+
+# ---- added 24 Nov 2026: the mentor's review ----
+def test_a_company_outside_the_corpus_is_refused_by_code_whatever_the_model_says(figure_store, ask):
+    """Mentor's session: "How did PWC perfom FY24-25" got "Which figure or ratio would you like?" and then Axis Bank's
+    net profit, because a sidebar filter had added "for AXISBANK". The filter is gone; the name is refused in code."""
+    from finsight.agent.planner import unknown_company
+    for q, name in (("How did PWC perfom FY24-25", "PWC"), ("WHat did PWC perform fY25-26", "PWC"), ("how did pwc perform in fy24-25", "PwC"),
+                    ("RIL revenue in FY2025-26", "RIL"), ("What about L&T?", "L&T"), ("net profit of reliance in FY2025-26", "Reliance"),
+                    ("Tata Motors revenue FY2025-26", "Tata Motors"), ("What was Reliance Industries' revenue in FY2025-26?", "Reliance Industries")):
+        assert unknown_company(q) == name, q
+        a = ask(q)
+        assert a.status == "refused" and a.refusal_reason == "not_in_corpus" and a.answer.startswith(f"{name} is not in my corpus"), (q, a.answer)
+    # later on 24 Nov 2026: the years are named only when the question names a year
+    assert ask("What is the Net profit of PCJ").answer == "PCJ is not in my corpus. I cover 15 companies."
+    assert ask("What is the netprofit of PCJ for FY25-26").answer == "PCJ is not in my corpus. I cover 15 companies for FY2024-25 and FY2025-26."
+    assert ask("What about L&T?").answer == "L&T is not in my corpus. I cover 15 companies."
+    for q in ("What was the EPS?", "What is the ROE in FY2025-26?", "and the MD&A?", "Casa Rato", "WHAT WAS THE PROFIT", "What was the profit?",
+              "Which Bank had the highest CASA ratio in FY2025-26?", "Kotak Mahindra Bank net profit", "tech mahindra revenue",
+              "What was Tata Consultancy Services's consolidated operating margin in FY2025-26?", "Compare the two companies.", "GDP growth in FY2025-26"):
+        assert unknown_company(q) is None, q
+
+
+# ---- added later on 24 Nov 2026: the plain chat screen of the mentor's review ----
+def test_the_sidebar_holds_new_conversation_and_past_conversations_only(figure_store, monkeypatch):
+    pytest.importorskip("streamlit")
+    from streamlit.testing.v1 import AppTest
+    import finsight.agent.graph as graph
+    real_run = graph.run
+    monkeypatch.setattr(graph, "run", lambda question, session_id="default", **_: real_run(question, session_id=session_id, llm=model(), memory=Memory(":memory:")))
+    at = AppTest.from_file(str(APP / "streamlit_app.py"), default_timeout=30).run()
+    assert not at.exception and [b.label for b in at.sidebar.button] == ["New conversation"]
+    assert not at.radio and not at.selectbox and not at.multiselect and not at.slider       # no Answer mode, Quick lookup or Filters
+    assert not any("Quick lookup" in h.value or "Filters" in h.value for h in at.sidebar.header)
+    at.chat_input[0].set_value("What was Infosys' consolidated revenue from operations in FY2025-26?").run()
+    at.chat_input[0].set_value("What was Infosys' consolidated net profit in FY2025-26?").run()
+    keys = [b.key for b in at.sidebar.button]
+    current = at.session_state.session_id
+    assert keys == ["new_conversation", f"open_{current}", f"del_{current}"]                # one line for the conversation, with its menu
+    assert any(c.value == "Past conversations" for c in at.sidebar.caption)
+
+
+def test_export_to_pdf_is_one_button_and_only_for_a_verified_answer(figure_store, monkeypatch):
+    pytest.importorskip("streamlit")
+    pymupdf = pytest.importorskip("pymupdf")
+    from streamlit.testing.v1 import AppTest
+    import finsight.agent.graph as graph
+    real_run = graph.run
+    monkeypatch.setattr(graph, "run", lambda question, session_id="default", **_: real_run(question, session_id=session_id, llm=model(), memory=Memory(":memory:")))
+    at = AppTest.from_file(str(APP / "streamlit_app.py"), default_timeout=30).run()
+    at.chat_input[0].set_value("Should I buy TCS shares?").run()
+    assert not at.exception and not at.get("download_button")                       # a refusal cannot be exported
+    at.chat_input[0].set_value("What was Infosys' consolidated revenue from operations in FY2025-26?").run()
+    exports = at.get("download_button")
+    assert not at.exception and len(exports) == 1 and exports[0].proto.label.endswith("Export to PDF")
+    assert not [b for b in at.button if (b.key or "").startswith("note_")] and not at.checkbox      # no DRAFT, no Approve
+    data = next(iter(at.session_state["pdf_cache"].values()))
+    assert data[:5] == b"%PDF-"
+    text = " ".join(" ".join(page.get_text() for page in pymupdf.open(stream=data, filetype="pdf")).split())
+    assert "1,000.00" in text and "INFY-FY2526-p287" in text and "Not investment advice" in text and "DRAFT" not in text
+    # 24 Nov 2026 (later): the PDF is the complete conversation: the refused question is in it too, marked as refused
+    assert "FinSight conversation" in text and "1. Should I buy TCS shares?" in text and "Refused:" in text
+    assert "2. What was Infosys' consolidated revenue from operations in FY2025-26?" in text
+    at.chat_input[0].set_value("What was Infosys' consolidated net profit in FY2025-26?").run()
+    exports = at.get("download_button")
+    assert not at.exception and len(exports) == 1                                   # still one button, under the newest reply
+    data = next(iter(at.session_state["pdf_cache"].values()))
+    text = " ".join(" ".join(page.get_text() for page in pymupdf.open(stream=data, filetype="pdf")).split())
+    text = text.replace("\ufb01", "fi")                                            # the PDF font joins f and i into one sign
+    assert "3. What was Infosys' consolidated net profit in FY2025-26?" in text and "1,000.00" in text and "180.00" in text
+
+
+def test_the_pdf_of_an_answer_has_its_figures_key_points_and_the_notice():
+    pymupdf = pytest.importorskip("pymupdf")
+    import pdf_export
+    fig = Figure(name="net_profit", company="INFY", fiscal_year="2025-26", value=29474.0, unit="crore", page=287, citation="INFY-FY2526-p287")
+    a = AgentAnswer(status="answered", verified=True, answer="Infosys's net profit was \u20b929,474.00 crore in FY2025-26 (consolidated).",
+                    inputs=[fig], citations=["INFY-FY2526-p287"], caveats=["Amounts are in crore."], formula="net_profit / revenue_from_operations * 100")
+    body = pdf_export.answer_html("What was Infosys' net profit?", a, [{"Figure": "net_profit", "Value": "29,474.00", "Citation": "INFY-FY2526-p287"}])
+    assert "Rs 29,474.00 crore" in body and "\u20b9" not in body and "<table>" in body and "Not investment advice." in body
+    assert "&lt;b&gt;" in pdf_export.answer_html("<b>bold?</b>", a, [])                      # text of a question is never read as HTML
+    text = " ".join(" ".join(p.get_text() for p in pymupdf.open(stream=pdf_export.answer_pdf("What was Infosys' net profit?", a), filetype="pdf")).split())
+    assert "29,474.00" in text and "FY2025-26 report, page 287" in text and "Formula" in text and "Note: Amounts are in crore." in text
+    s = AgentAnswer(status="answered", verified=True, answer="Two risks.", key_points=[KeyPoint(point="Cyber risk is managed by a layered framework. " * 400, citation="ITC-FY2526-p110"),
+                                                                                         KeyPoint(point="Commodity prices are volatile.", citation="ITC-FY2526-p112")])
+    doc = pymupdf.open(stream=pdf_export.answer_pdf("Summarise the top risks ITC lists in its FY2025-26 report.", s), filetype="pdf")
+    text = " ".join(" ".join(p.get_text() for p in doc).split())
+    assert doc.page_count >= 2 and "ITC-FY2526-p112" in text and "Key points" in text       # a long answer runs over to a second page
+    assert pdf_export.file_name("What was Infosys' net profit in FY2025-26?") == "FinSight_what-was-infosys-net-profit-in-fy2025-26.pdf"
+    assert pdf_export.file_name("???") == "FinSight_answer.pdf"
+
+
+
+def test_the_sidebar_shows_the_name_and_the_menu_button_has_no_arrow():
+    """24 Nov 2026 (mentor's review): the name FinSight at the top of the sidebar; three dots only on the menu."""
+    here = Path(__file__).resolve().parents[1] / "app"
+    page, parts = (here / "streamlit_app.py").read_text(encoding="utf-8"), (here / "components.py").read_text(encoding="utf-8")
+    assert 'stSidebarHeader"]::before { content: "📊 FinSight"' in page
+    assert '[class*="st-key-menu_"] button [data-testid="stIconMaterial"]' in parts and "display: none" in parts
