@@ -32,6 +32,13 @@ from finsight.safety.pii import mask_pii
 from finsight.safety.sanitiser import clean_question
 from finsight.schemas import AgentAnswer
 from finsight.tools.base import ToolError
+from finsight.tracing import get_langfuse, observation_context, flush as langfuse_flush
+
+from contextlib import contextmanager
+
+@contextmanager
+def _noop():
+    yield None
 
 MAX_REWRITES = 2
 from finsight.corpus import fy_label, years_in  # noqa: E402   (17 Nov 2026: for the "taken from the previous question" note)
@@ -56,6 +63,25 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
         llm = RealLLM()
     memory = memory or Memory()
     question = clean_question(question)
+
+    # --- Langfuse tracing: one trace per question ---
+    lf = get_langfuse()
+    lf_trace = lf.trace(name="agent-run", input={"question": question, "session_id": session_id},
+                        session_id=session_id) if lf else None
+    _lf_span = None  # the currently open stage span
+
+    def _lf_start(name: str, **meta):
+        """Open a Langfuse span for a stage; close the previous one."""
+        nonlocal _lf_span
+        _lf_end()  # close any open span
+        if lf_trace:
+            _lf_span = lf_trace.span(name=name, input=meta or None)
+
+    def _lf_end(**meta):
+        nonlocal _lf_span
+        if _lf_span:
+            _lf_span.end(output=meta or None)
+            _lf_span = None
     # OLD: trace: list[dict] = []
     # CHANGED (22 Nov 2026): the same list, which also reports each executor step when it is added (see on_stage).
     class _Trace(list):
@@ -70,6 +96,11 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
     def done(a: AgentAnswer) -> AgentAnswer:
         a.trace, a.tokens_used = trace, llm.tokens
         memory.log_turn(session_id, mask_pii(question), a.status, a.answer or a.clarifying_question or "")
+        _lf_end()
+        if lf_trace:
+            lf_trace.update(output={"status": a.status, "answer": a.answer or a.clarifying_question or "",
+                                    "tokens": llm.tokens})
+        langfuse_flush()
         return a
 
     def over_budget() -> bool:
@@ -82,6 +113,7 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
 
     # 1. guard (code only, no tokens)
     tell("guard", "Checking that the question is about the reports and is not a request for advice")
+    _lf_start("guard", question=question)
     refused = guard(question, trace)
     if refused:
         # NEW (18 Nov 2026): a year outside the corpus typed as the REPLY to my clarifying question does not
@@ -146,7 +178,9 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
     try:
         # OLD: draft = planner.draft_plan(question, slots, llm)   ...   plan = planner.resolve(draft, question, slots)
         tell("planner", "Working out the company, the year and what is asked")
-        draft = planner.draft_plan(asked, slots, llm)
+        _lf_start("planner", question=asked)
+        with observation_context(_lf_span) if _lf_span else observation_context(lf_trace) if lf_trace else _noop():
+            draft = planner.draft_plan(asked, slots, llm)
         trace.append({"node": "planner", "model_slots": draft.model_dump(exclude_none=True)})
         plan = planner.resolve(draft, asked, slots)
     except planner.Clarify as c:
@@ -174,9 +208,11 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
 
     # 3. executor (tools)
     tell("executor", f"Collecting the figures or passages from the reports ({len(steps)} step{'s' if len(steps) != 1 else ''})")
+    _lf_start("executor", steps=len(steps), companies=plan.companies, intent=plan.intent)
     runner = Run(plan, llm, trace)
     try:
-        result = runner.execute(steps)
+        with observation_context(_lf_span) if _lf_span else observation_context(lf_trace) if lf_trace else _noop():
+            result = runner.execute(steps)
     except ToolError as e:
         # NEW (19 Nov 2026, later): the report itself says the thing asked about does not exist (executor.NotApplicable).
         if isinstance(e, NotApplicable):
@@ -224,17 +260,19 @@ def run(question: str, session_id: str = "default", llm=None, memory: Memory | N
 
     # 4. writer + 5. critic (rewrite at most twice; the last attempt is the code template)
     # OLD: expected = writer.formula_for(plan) if plan.intent != "summary" else None
+    _lf_start("writer-critic", intent=plan.intent)
     expected = writer.formula_for(plan, result) if plan.intent != "summary" else None      # 19 Nov 2026: + result
     verdict = None
     for attempt in range(MAX_REWRITES + 1):
         tell("writer", "Writing the answer" + (f" again (attempt {attempt + 1})" if attempt else ""))
         try:
-            if plan.intent == "summary":
-                # OLD: ans = writer.write_summary(plan, result, llm)
-                # NEW (21 Nov 2026): on a second or third attempt the writer is told why the last one was rejected.
-                ans = writer.write_summary(plan, result, llm, feedback="; ".join(verdict.reasons) if verdict and not verdict.ok else "")
-            else:
-                ans = writer.write(plan, result, llm, use_model=use_model_wording and attempt < MAX_REWRITES)
+            with observation_context(_lf_span) if _lf_span else observation_context(lf_trace) if lf_trace else _noop():
+                if plan.intent == "summary":
+                    # OLD: ans = writer.write_summary(plan, result, llm)
+                    # NEW (21 Nov 2026): on a second or third attempt the writer is told why the last one was rejected.
+                    ans = writer.write_summary(plan, result, llm, feedback="; ".join(verdict.reasons) if verdict and not verdict.ok else "")
+                else:
+                    ans = writer.write(plan, result, llm, use_model=use_model_wording and attempt < MAX_REWRITES)
         except Exception as e:  # noqa: BLE001
             trace.append({"node": "writer", "attempt": attempt + 1, "error": str(e)[:200]})
             continue

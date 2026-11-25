@@ -13,7 +13,7 @@ down:               ## Stop all Docker services
 	docker compose --env-file .env down
 
 install:            ## Install the package (editable) + dev deps
-	pip install -e ".[dev]"
+	pip install -e .[dev] --config-settings editable_mode=compat
 
 check:              ## Day-0: verify the LLM endpoint + capabilities
 	python scripts/endpoint_check.py
@@ -28,7 +28,7 @@ validate:           ## Check that ingestion produced all artifacts
 	python scripts/validate_ingest.py
 
 app:                ## Launch the Streamlit chat
-	streamlit run app/streamlit_app.py
+	python -m streamlit run app/streamlit_app.py
 
 eval:               ## Run the evaluation over the frozen 90-question set
 	python eval/run_eval.py

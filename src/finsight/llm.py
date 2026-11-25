@@ -29,6 +29,32 @@ from finsight.config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _trace_generation(name: str, messages: list[dict], output, completion) -> None:
+    """If Langfuse tracing is active, record this LLM call as a generation on the current span."""
+    try:
+        from finsight.tracing import current_observation
+        obs = current_observation()
+        if obs is None:
+            return
+        usage = getattr(completion, "usage", None)
+        usage_dict = None
+        if usage:
+            usage_dict = {
+                "input": getattr(usage, "prompt_tokens", None),
+                "output": getattr(usage, "completion_tokens", None),
+                "total": getattr(usage, "total_tokens", None),
+            }
+        obs.generation(
+            name=name,
+            model=settings.model_name,
+            input=messages,
+            output=output,
+            usage=usage_dict,
+        )
+    except Exception:  # noqa: BLE001  tracing must never break the app
+        logger.debug("Langfuse generation trace failed", exc_info=True)
+
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 _RETRY_STATUS = {429, 500, 502, 503, 504}
 _BACKOFFS = (2, 4, 8)  # seconds
@@ -139,7 +165,9 @@ def chat(messages: list[dict], max_tokens: int | None = None, temperature: float
 
     resp = _with_retries(_call)
     _add_usage(resp)  # ADDED (agent layer): count this call's tokens (see TOKENS_USED above)
-    return _strip_think(resp.choices[0].message.content or "")
+    output = _strip_think(resp.choices[0].message.content or "")
+    _trace_generation("chat", messages, output, resp)
+    return output
 
 
 def structured(messages: list[dict], schema, max_tokens: int | None = None, max_retries: int = 2):
@@ -177,5 +205,6 @@ def structured(messages: list[dict], schema, max_tokens: int | None = None, max_
 
     obj, completion = _with_retries(_call)
     _add_usage(completion)
+    _trace_generation(f"structured:{schema.__name__}", messages, obj.model_dump_json() if hasattr(obj, 'model_dump_json') else str(obj), completion)
     return obj
     # ---------------------------------------------------------------------------------------------------
