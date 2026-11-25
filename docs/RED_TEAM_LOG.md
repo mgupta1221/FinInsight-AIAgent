@@ -88,6 +88,7 @@ would you like?".
 | F9 | Ask F7 again, then reply: no | "No problem. What would you like to know instead?" No figure | | | |
 | F10 | Revenue from operation (straight after F9) | Revenue from operations of Infosys for FY2025-26, with the note that company and year come from the previous question. The agent does not ask for the company or the year | | | |
 | F11 | Ask F7 again, then reply: No. Revenue from operatiom | Revenue from operations of Infosys for FY2025-26. Not the net profit | | | |
+| F12 | Ask: how is the Net profit margin of HCL VS Infosys in FY25-26. Then: Are they better then TCS? | Net profit margin of HCLTech, Infosys and TCS for FY2025-26, ranked. The agent does not ask which figure is meant | | | |
 
 ## Summary
 

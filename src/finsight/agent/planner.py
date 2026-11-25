@@ -84,7 +84,26 @@ _FILLER = set("""a an the of for in on at to by from with and or but if so than 
     increased decrease decreased rise rose fall fell up down over last previous prior current latest
     total net gross ratio ratios margin margins per cent percent percentage rs inr crore crores million lakh thousand
     summary summarise summarize summarised summarized describe key top main principal risk risks commentary
-    management discussion strategy strategic priorities outlook ok okay thanks thank yes no not any all both each s""".split())
+    management discussion strategy strategic priorities outlook ok okay thanks thank yes no not any all both each s
+    better worse best worst bigger smaller larger greater stronger weaker against""".split())
+# 25 Nov 2026: the last line above (better, worse ... against) is new. See _COMPARES below for the reason.
+
+
+# NEW (25 Nov 2026): "Are they better than TCS?" right after a comparison of two companies.
+# WHY: after "net profit margin of HCL vs Infosys in FY25-26" was answered, the follow-up "Are they better then
+#      TCS?" got the reply "Which figure or ratio would you like?". Three things went wrong together:
+#        1. "they" was not among the words that point back to the previous answer (only that, this, it, them,
+#           those), so the question was a follow-up only if the model happened to say so;
+#        2. "better" was an unknown word, and a follow-up with an unknown word is treated as a new question,
+#           so the remembered ratio (net profit margin) was dropped;
+#        3. the companies of the previous answer were added to the new one only when the model labelled the
+#           question a comparison.
+#      All three are now decided by code: a question that points back (they, them, both ...), uses a comparing
+#      word (better, higher, versus ...) and names a company is a comparison of the remembered companies with
+#      the named one, for the remembered figure and year.
+_REFERS_BACK = re.compile(r"\b(they|them|those|these|both|it|that)\b", re.I)
+_COMPARES = re.compile(r"\b(better|worse|higher|lower|bigger|smaller|larger|greater|stronger|weaker|more|less|"
+                       r"compare[ds]?|comparison|versus|vs|against|beats?)\b", re.I)
 
 
 def _vocabulary() -> set[str]:
@@ -396,7 +415,11 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
     same_company = not find_companies(question) and any(w in _vocabulary() and w not in _FILLER for w in words) \
         and not _unknown_words(question, [], loose=True)      # 24 Nov 2026 (later): a near miss of a finance word is accepted
     # OLD (earlier today): follow = bool(memory) and (plan.is_follow_up or bool(FOLLOW_UP.search(question)) or fragment)
-    follow = bool(memory) and (plan.is_follow_up or bool(FOLLOW_UP.search(question)) or fragment or same_company)
+    # OLD (17 Nov 2026): follow = bool(memory) and (plan.is_follow_up or bool(FOLLOW_UP.search(question)) or fragment or same_company)
+    # NEW (25 Nov 2026): see _COMPARES above.
+    compares_back = bool(memory.get("companies")) and bool(find_companies(question)) \
+        and bool(_REFERS_BACK.search(question)) and bool(_COMPARES.search(question))
+    follow = bool(memory) and (plan.is_follow_up or bool(FOLLOW_UP.search(question)) or fragment or same_company or compares_back)
 
     # companies: what the code finds in the question, plus resolvable names from the model
     tickers = find_companies(question)
@@ -430,7 +453,8 @@ def resolve(plan: AgentPlan, question: str, memory: dict) -> AgentPlan:
             raise Refuse("not_in_corpus", outside_message(outside, question))
     if not tickers and follow:
         tickers = list(memory.get("companies", []))
-    elif follow and plan.intent == "compare_rank" and len(tickers) == 1:
+    # OLD: elif follow and plan.intent == "compare_rank" and len(tickers) == 1:
+    elif follow and ((plan.intent == "compare_rank" and len(tickers) == 1) or compares_back):      # 25 Nov 2026: or compares_back
         tickers = list(dict.fromkeys(memory.get("companies", []) + tickers))       # "compare that with HDFC Bank"
 
     # NEW (15 Nov 2026): a "follow-up" that brings words the agent cannot place is really a NEW question.

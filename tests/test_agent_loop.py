@@ -761,6 +761,24 @@ def test_the_agent_reports_each_stage_as_it_starts(figure_store):
     assert b.status == "answered" and b.value == 180.0                            # a display problem never stops an answer
 
 
+def test_are_they_better_than_another_company_compares_with_the_previous_answer():
+    """25 Nov 2026: after "net profit margin of HCL vs Infosys in FY25-26", "Are they better then TCS?" asked which figure."""
+    from finsight.agent import planner
+    from finsight.schemas import AgentPlan
+    mem = {"companies": ["HCLTECH", "INFY"], "fiscal_years": ["2025-26"], "scope": "consolidated",
+           "metric": "net_profit_margin", "item": None, "intent": "compare_rank"}
+    for q in ("Are they better then TCS?", "are they higher than TCS", "compare them with TCS"):
+        p = planner.resolve(AgentPlan(intent="other"), q, dict(mem))          # the model gives nothing: code must decide
+        assert p.intent == "compare_rank" and p.companies == ["HCLTECH", "INFY", "TCS"], q
+        assert p.metric == "net_profit_margin" and p.fiscal_years == ["2025-26"], q
+    one = dict(mem, companies=["INFY"])
+    p = planner.resolve(AgentPlan(intent="other"), "Is it better than Wipro?", one)
+    assert p.companies == ["INFY", "WIPRO"] and p.metric == "net_profit_margin" and p.intent == "compare_rank"
+    # a full question of its own about another company is NOT joined to the previous companies
+    p = planner.resolve(AgentPlan(intent="other"), "What was TCS' net profit margin in FY2025-26?", dict(mem))
+    assert p.companies == ["TCS"]
+
+
 def test_a_question_about_a_loss_is_not_answered_with_the_profit(figure_store, ask):
     """Mentor's review, 24 Nov 2026: "what is loss of Infosys for year 25-26?" was answered with the net profit."""
     from finsight.agent import planner
