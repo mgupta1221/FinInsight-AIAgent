@@ -236,7 +236,14 @@ def test_chat_screen_keeps_a_conversation_and_opens_it_again(figure_store, monke
     line.click().run()
     assert not again.exception and again.session_state.session_id == first
     assert len(tables(again)) == 1 and "1,000.00 crore" in " ".join(m.value for m in again.markdown)   # the full card is back
+    # OLD (24 Nov 2026): again.button(key=f"del_{first}").click().run()      (deleted at once)
+    # NEW (25 Nov 2026): the bin asks first. "No" keeps the conversation, "Yes, delete" removes it.
     again.button(key=f"del_{first}").click().run()
+    assert not again.exception and again.button(key="confirm_delete_yes") and again.button(key="confirm_delete_no")
+    again.button(key="confirm_delete_no").click().run()
+    assert again.button(key=f"open_{first}") and not [b for b in again.button if (b.key or "").startswith("confirm_delete")]
+    again.button(key=f"del_{first}").click().run()
+    again.button(key="confirm_delete_yes").click().run()
     assert not again.exception and len(tables(again)) == 0
     assert not [b for b in again.button if (b.key or "").startswith(("open_", "del_"))]             # the list is empty again
 
@@ -539,4 +546,7 @@ def test_the_sidebar_shows_the_name_and_the_menu_button_has_no_arrow():
     here = Path(__file__).resolve().parents[1] / "app"
     page, parts = (here / "streamlit_app.py").read_text(encoding="utf-8"), (here / "components.py").read_text(encoding="utf-8")
     assert 'stSidebarHeader"]::before { content: "📊 FinSight"' in page
-    assert '[class*="st-key-menu_"] button [data-testid="stIconMaterial"]' in parts and "display: none" in parts
+    # OLD (24 Nov 2026): assert '[class*="st-key-menu_"] button [data-testid="stIconMaterial"]' in parts and "display: none" in parts
+    # NEW (25 Nov 2026): a bin in place of the three dots, a question before deleting, titles at the left.
+    assert 'menu.button(":material/delete:"' in parts and "Do you want to delete this conversation?" in parts
+    assert 'button * { justify-content: flex-start !important; text-align: left !important; }' in parts

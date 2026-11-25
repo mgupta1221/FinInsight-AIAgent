@@ -1642,3 +1642,44 @@ passed on Python 3.11.
 - The button appears once the conversation has at least one verified answer. A past conversation opened from the
   sidebar can be exported the same way. The file is named after the first question.
 - The agent is not changed. Unit tests: 209 passed (the export test is extended).
+
+## 68. Update 25 Nov 2026 — "Are they better than TCS?" after a comparison
+
+**What happened.** "How is the net profit margin of HCL vs Infosys in FY25-26" was answered (Infosys 16.50%,
+HCLTech 12.80%). The next question, "Are they better then TCS?", got the reply "Which figure or ratio would you
+like?" instead of a comparison of the three companies.
+
+**Why** (`agent/planner.py`). Three small gaps met in one question:
+
+1. "they" was not one of the words that point back to the previous answer (only that, this, it, them, those).
+2. "better" was a word the agent did not know. A follow-up with an unknown word is treated as a new question,
+   so the remembered ratio (net profit margin) was dropped.
+3. The companies of the previous answer were joined to the new company only when the model labelled the
+   question a comparison.
+
+**Now.** Code decides all three. A question that points back (they, them, both, it ...), uses a comparing word
+(better, worse, higher, lower, versus, against ...) and names a company is read as: compare the remembered
+companies with the named one, for the remembered figure and year. "Are they better then TCS?" gives the net
+profit margin of HCLTech, Infosys and TCS for FY2025-26, ranked. The answer carries the note that the figure and
+year were taken from the previous question.
+
+- A complete question about another company ("What was TCS' net profit margin in FY2025-26?") is not joined to
+  the previous companies.
+- General rule; nothing is specific to these companies or to net profit margin.
+- Evaluation questions are asked one at a time with empty memory, so this rule cannot change their plans; one
+  full practice run before the freeze confirms it.
+
+1 test added. Unit tests: 210 passed on Python 3.11. One prompt added to `docs/RED_TEAM_LOG.md` (F12).
+
+**Later on 25 Nov 2026: the list of past conversations** (`app/components.py`):
+
+| Before | Now |
+|---|---|
+| Titles of the past conversations were centred | They start at the left |
+| Three dots beside each conversation opened a small menu with "Delete" | A bin icon beside each conversation |
+| "Delete" removed the conversation at once | A small window asks "Do you want to delete this conversation?" "Yes, delete" removes it; "No" only closes the window |
+
+- The first rule for the alignment had no effect because Streamlit centres the text in a box inside the button;
+  the rule now reaches inside the button.
+- The deleting itself is unchanged (the conversation and what the agent remembered of it). The agent is not
+  touched. Unit tests: 210 passed (the test of past conversations now also presses "No" and then "Yes, delete").

@@ -341,12 +341,56 @@ def pdf_button(st, history: list[dict], key: str, slot=None) -> None:
 #      it, and a small menu (three dots) beside it holds "Delete". With many conversations the list scrolls.
 #      The function only draws the list and reports what was clicked; the chat screen does the opening and
 #      deleting, as before. The conversation that is open is drawn with a frame.
+# NEW (25 Nov 2026): the question shown before a conversation is deleted.
+# WHY: asked for after trying the list: a click on the bin must not delete at once. A small window asks
+#      "Do you want to delete this conversation?"; "Yes, delete" deletes it, "No" only closes the window.
+#      The window is Streamlit's dialog. Which conversation is being asked about is kept in
+#      st.session_state["confirm_delete"]; the answer "yes" is left in st.session_state["delete_confirmed"],
+#      which conversation_list() below hands to the chat screen as ("delete", id). The deleting itself is
+#      still done by the chat screen, as before.
+def _confirm_delete(st, chat_id: str, title: str) -> None:
+    def forget() -> None:                                       # the window was closed with its X
+        st.session_state.pop("confirm_delete", None)
+    try:
+        window = st.dialog("Delete conversation", on_dismiss=forget)
+    except TypeError:                                           # an older Streamlit: no on_dismiss
+        window = st.dialog("Delete conversation")
+
+    @window
+    def ask() -> None:
+        st.write("Do you want to delete this conversation?")
+        st.caption(title)
+        yes, no = st.columns(2)
+        if yes.button("Yes, delete", key="confirm_delete_yes", type="primary", use_container_width=True):
+            st.session_state.pop("confirm_delete", None)
+            st.session_state["delete_confirmed"] = chat_id
+            st.rerun()
+        if no.button("No", key="confirm_delete_no", use_container_width=True):
+            st.session_state.pop("confirm_delete", None)
+            st.rerun()
+    ask()
+
+
 def conversation_list(st, past: list[dict], current: str):
     """Returns ("open", id), ("delete", id) or None."""
     import history as chat_history
+    # NEW (25 Nov 2026): "Yes, delete" was pressed in the window above on the previous run.
+    confirmed = st.session_state.pop("delete_confirmed", None)
+    if confirmed:
+        return ("delete", confirmed)
+    # OLD (24 Nov 2026), commented: the titles stayed centred with these two rules.
+    # st.markdown("""<style>
+    # [class*="st-key-open_"] button { justify-content: flex-start; text-align: left; padding-left: 0.6rem; }
+    # [class*="st-key-open_"] button p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    # </style>""", unsafe_allow_html=True)
+    # NEW (25 Nov 2026): the titles of the past conversations start at the left.
+    # WHY: Streamlit centres the text of a button in a box INSIDE the button, so a rule on the button alone did
+    #      not move it. The rule now reaches the boxes inside the button as well and is marked important.
     st.markdown("""<style>
-    [class*="st-key-open_"] button { justify-content: flex-start; text-align: left; padding-left: 0.6rem; }
-    [class*="st-key-open_"] button p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    [class*="st-key-open_"] button, [class*="st-key-open_"] button * { justify-content: flex-start !important; text-align: left !important; }
+    [class*="st-key-open_"] button { padding-left: 0.6rem; }
+    [class*="st-key-open_"] button > div, [class*="st-key-open_"] button [data-testid="stMarkdownContainer"] { width: 100%; min-width: 0; }
+    [class*="st-key-open_"] button p { width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     </style>""", unsafe_allow_html=True)
     # NEW (24 Nov 2026, mentor's review): only the three dots on the menu button, no arrow beside them.
     # WHY: Streamlit draws a small down-arrow on every popover button and has no setting to switch it off, so
@@ -362,12 +406,13 @@ def conversation_list(st, past: list[dict], current: str):
     #      picture but an icon written with an icon font (stIconMaterial), so the rule above did not match it.
     #      Each menu now sits in a container with its own key ("menu_<id>"), which gives a class name the rule can
     #      rely on, and the rule hides the icon whichever way Streamlit draws it.
-    st.markdown("""<style>
-    [class*="st-key-menu_"] button [data-testid="stIconMaterial"],
-    [class*="st-key-menu_"] button svg,
-    [class*="st-key-menu_"] button > div > :last-child:not(:first-child) { display: none !important; }
-    [class*="st-key-menu_"] button { padding-left: 0.3rem; padding-right: 0.3rem; }
-    </style>""", unsafe_allow_html=True)
+    # OLD (24 Nov 2026), commented: the style of the three-dot menu, which is replaced by a bin (see below).
+    # st.markdown("""<style>
+    # [class*="st-key-menu_"] button [data-testid="stIconMaterial"],
+    # [class*="st-key-menu_"] button svg,
+    # [class*="st-key-menu_"] button > div > :last-child:not(:first-child) { display: none !important; }
+    # [class*="st-key-menu_"] button { padding-left: 0.3rem; padding-right: 0.3rem; }
+    # </style>""", unsafe_allow_html=True)
     st.caption("Past conversations")
     box = st.container(height=440, border=False) if len(past) > 9 else st.container()
     clicked = None
@@ -384,8 +429,21 @@ def conversation_list(st, past: list[dict], current: str):
             #     if st.button("Delete", key=f"del_{c['id']}", use_container_width=True):
             #         clicked = ("delete", c["id"])
             # NEW: the same popover inside a container with a key, so the style rule above can find its button.
-            with menu.container(key=f"menu_{c['id']}"):
-                with st.popover("⋮", use_container_width=True):
-                    if st.button("Delete", key=f"del_{c['id']}", use_container_width=True):
-                        clicked = ("delete", c["id"])
+            # OLD (24 Nov 2026), commented: three dots that opened a small menu with "Delete".
+            # with menu.container(key=f"menu_{c['id']}"):
+            #     with st.popover("⋮", use_container_width=True):
+            #         if st.button("Delete", key=f"del_{c['id']}", use_container_width=True):
+            #             clicked = ("delete", c["id"])
+            # NEW (25 Nov 2026): a bin in place of the three dots. A click asks first (see _confirm_delete above).
+            if menu.button(":material/delete:", key=f"del_{c['id']}", help="Delete this conversation", type="tertiary"):
+                st.session_state["confirm_delete"] = c["id"]
+    asking = st.session_state.get("confirm_delete")
+    if asking and not clicked:
+        match = [c for c in past if c["id"] == asking]
+        if match:
+            _confirm_delete(st, asking, match[0]["title"])
+        else:
+            st.session_state.pop("confirm_delete", None)        # the conversation is no longer in the list
+    elif clicked:
+        st.session_state.pop("confirm_delete", None)            # another conversation was opened instead
     return clicked

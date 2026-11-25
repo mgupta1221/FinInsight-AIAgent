@@ -119,7 +119,7 @@ python -m pytest -q
 ```
 
 <!-- 24 Nov 2026: was 206 passed before the tests for the new chat screen and the loss question -->
-Expected: **209 passed**.
+Expected: **210 passed**.
 
 ## 8\. Build the figure store (needed for number questions)
 
@@ -157,7 +157,7 @@ python scripts/ask.py --reset
 <!-- Changed 24 Nov 2026: the sidebar no longer has the "Basic search" switch (removed after the mentor's review). Old text:
 Chat screen in the browser. It uses the agent by default and shows the answer, the formula, the figures used with their pages, and a "How I got this" trace. The sidebar has a switch to "Basic search (baseline, no checks)", which is one search and one model answer without the agent, and a "New conversation" button that starts a fresh conversation:
 -->
-Chat screen in the browser. It always uses the agent and shows the answer, the formula, the figures used with their pages, and a "How I got this" trace. The sidebar has a "New conversation" button and the list of past conversations: click one to open it, or use the "⋮" beside it to delete it. Under the newest reply, "Export to PDF" saves the complete conversation as a PDF in the Downloads folder:
+Chat screen in the browser. It always uses the agent and shows the answer, the formula, the figures used with their pages, and a "How I got this" trace. The sidebar has a "New conversation" button and the list of past conversations: click one to open it, or click the bin beside it to delete it (it asks first). Under the newest reply, "Export to PDF" saves the complete conversation as a PDF in the Downloads folder:
 
 ```
 streamlit run app/streamlit_app.py
