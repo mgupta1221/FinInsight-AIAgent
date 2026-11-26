@@ -89,6 +89,41 @@ def figures_table(a, link=None) -> str:
     return "\n".join(out)
 
 
+# NEW (26 Nov 2026): the table shown under "Citation" on the chat screen.
+# WHY: asked for after trying the screen. The figures table had seven columns and two of them repeated what
+#      the page link already says: "Year" (the link reads "FY2025-26 report, page 375") and the citation code
+#      (HCLTECH-FY2526-p375). The unit had a column of its own. The table now has four columns:
+#          Figure | Company | Value | Citation
+#      - Value carries its unit: "16,652.00 crore".
+#      - Citation is the page link that was called "Read from": "FY2025-26 report, page 375", which opens the
+#        report at that page.
+#      figures_table() and input_rows() above are unchanged: the exported PDF and the tests still use them.
+def citation_table(a, link=None) -> str:
+    """The figures of an answer as a Markdown table of four columns. `link(citation)` gives the page address, or None."""
+    if link is None:
+        try:
+            import sources
+            link = sources.page_link
+        except Exception:  # noqa: BLE001
+            link = lambda c: None  # noqa: E731
+    rows = input_rows(a)
+    if not rows:
+        return ""
+    out = ["| Figure | Company | Value | Citation |", "| --- | --- | ---: | --- |"]
+    for row in rows:
+        try:
+            url = link(row["Citation"]) if row["Citation"] else None
+        except Exception:  # noqa: BLE001  a problem with the sources file must never hide the figures
+            url = None
+        page = row["Read from"]
+        if url and page:
+            page = f"[{page}]({url})"
+        value = f"{row['Value']} {row['Unit']}".strip()
+        cells = [row["Figure"], row["Company"], value, page]
+        out.append("| " + " | ".join(str(x).replace("|", "\\|") for x in cells) + " |")
+    return "\n".join(out)
+
+
 # NEW (22 Nov 2026, later): the answer text with every citation turned into a link to its page.
 # WHY: a summary cites a different page for each key point, and a comparison cites several pages on its "Source"
 #      line. One line of links under the answer made the reader match link to point. Now the citation at the end
@@ -138,12 +173,21 @@ def render_agent_answer(st, a) -> None:
         st.error(answer_markdown(a))
     if a.formula:
         st.markdown(f"**Formula:** `{a.formula}`")
+    # OLD (until 26 Nov 2026): the table "Figures used" was always open, with seven columns:
+    # if a.inputs:
+    #     st.markdown("**Figures used**")
+    #     # OLD: st.table(input_rows(a))
+    #     st.markdown(figures_table(a))                           # 22 Nov 2026: a Markdown table, so "Read from" can be a link
+    #     st.caption("Click an entry under \"Read from\" to open the report at that page of the PDF "
+    #                "(the page of the file, not the number printed on it).")
+    # NEW (26 Nov 2026): the figures are in a closed box named "Citation"; a click opens the table.
+    # WHY: asked for after trying the screen: the answer should be short, with the sources one click away. The
+    #      box stands where "How I got this" stood (see below), and the table has four columns (citation_table).
     if a.inputs:
-        st.markdown("**Figures used**")
-        # OLD: st.table(input_rows(a))
-        st.markdown(figures_table(a))                           # 22 Nov 2026: a Markdown table, so "Read from" can be a link
-        st.caption("Click an entry under \"Read from\" to open the report at that page of the PDF "
-                   "(the page of the file, not the number printed on it).")
+        with st.expander("Citation"):
+            st.markdown(citation_table(a))
+            st.caption("Click an entry under \"Citation\" to open the report at that page of the PDF "
+                       "(the page of the file, not the number printed on it).")
     # NEW (22 Nov 2026): links that open the report on the company's website at the cited page.
     # WHY: the reader had to find the report and the page by hand to check a figure. The addresses are in
     #      data/report_sources.csv (see app/sources.py). Shown for every answer that cites a page; a report
@@ -163,10 +207,15 @@ def render_agent_answer(st, a) -> None:
         st.caption("Opens the report at that page of the PDF (the page of the file, not the number printed on it).")
     for c in a.caveats:
         st.caption(f"Note: {c}")
-    if a.trace:
-        with st.expander(f"How I got this ({len(a.trace)} steps)"):
-            for step in a.trace:
-                st.code(json.dumps(step, ensure_ascii=False, default=str)[:1500], language="json")
+    # OLD (until 26 Nov 2026): the steps of the agent under the answer.
+    # if a.trace:
+    #     with st.expander(f"How I got this ({len(a.trace)} steps)"):
+    #         for step in a.trace:
+    #             st.code(json.dumps(step, ensure_ascii=False, default=str)[:1500], language="json")
+    # REMOVED FROM THE SCREEN (26 Nov 2026). WHY: asked for after trying the screen; the list of steps is for the
+    #      team, not for a reader of the answer. Nothing is lost: the answer still carries its trace (a.trace),
+    #      the evaluation writes it to traces.jsonl, `python scripts/ask.py "<question>" --trace` prints it, and
+    #      Langfuse shows it when tracing is on.
 
 
 # NEW (22 Nov 2026): DRAFT note and Approve (SPEC section 8, the human-in-the-loop boundary).

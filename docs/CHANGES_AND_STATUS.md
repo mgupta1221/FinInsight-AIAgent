@@ -1683,3 +1683,53 @@ year were taken from the previous question.
   the rule now reaches inside the button.
 - The deleting itself is unchanged (the conversation and what the agent remembered of it). The agent is not
   touched. Unit tests: 210 passed (the test of past conversations now also presses "No" and then "Yes, delete").
+
+## 69. Update 26 Nov 2026 — a teammate's change pulled from master: Langfuse tracing
+
+Pulled from `master` (pull request #8, "Add tracing support and observability") and copied into the working
+folder, so both folders hold the same code again.
+
+| File | What changed |
+|---|---|
+| `src/finsight/tracing.py` (new) | Starts a Langfuse client when both Langfuse keys are set in `.env`; otherwise does nothing |
+| `src/finsight/agent/graph.py` | One Langfuse trace per question, with a span for the guard, the planner, the executor and the writer / critic |
+| `src/finsight/llm.py` | Every model call is recorded on the open span, with its tokens |
+| `pyproject.toml` | `langfuse>=2.40,<3` (the code uses the version 2 interface) |
+| `docker-compose.yml` | `./src` and `./app` are shared with the container, so a code change shows after a restart without a rebuild |
+| `Makefile`, `README.md` | Start commands; a section on setting up Langfuse |
+
+What does not change: the answers, the plan, the checks and the trace shown under "How I got this". With the two
+keys empty, tracing is off and nothing is sent anywhere. Unit tests: 210 passed in both folders.
+
+To check before the freeze:
+
+- **Is tracing on?** It is on when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` both have a value in `.env`.
+  If they do, the Langfuse service must be running (`docker compose --env-file .env up -d langfuse langfuse-db`),
+  or every question waits for a connection that fails. To switch tracing off, leave the two keys empty.
+- **Version.** `pip show langfuse` must show a version 2 release. With version 3 the call `lf.trace(...)` does
+  not exist and a question would fail.
+- **One practice run** (`python eval/run_eval.py`) with the setting that will be used for the official runs, to
+  confirm the score and the time per question are unchanged.
+- **Documents to bring in line (team):** decision 13 in `docs/DECISIONS.md` and the report say that Langfuse is
+  not used and that traces are kept in files. Both are true only when the keys are empty.
+
+## 70. Update 26 Nov 2026 — the answer card: "Citation" box, shorter figures table, no "How I got this"
+
+Asked for after trying the screen (`app/components.py`; the agent is not touched).
+
+| Before | Now |
+|---|---|
+| Table "Figures used", always open | A closed box named "Citation"; a click opens the table |
+| Seven columns: Figure, Company, Year, Value, Unit, Read from, Citation | Four columns: Figure, Company, Value, Citation |
+| Value "16,652.00" and Unit "crore" in two columns | One column: "16,652.00 crore" |
+| "Read from": the link "FY2025-26 report, page 375"; "Citation": the code HCLTECH-FY2526-p375 | "Citation" is the link "FY2025-26 report, page 375". The year and the code are not repeated; both are in the link |
+| Box "How I got this (n steps)" under every answer | Removed from the screen |
+
+- The steps of the agent are not lost: every answer still carries its trace, the evaluation writes it to
+  `traces.jsonl`, `python scripts/ask.py "<question>" --trace` prints it, and Langfuse shows it when tracing is on.
+- The exported PDF is unchanged: it still has the full figures table with the year and the citation code.
+- **For the team:** SPEC section 6 lists "a trace of the steps" as part of the answer shown to the user. The
+  trace is still produced but no longer on the screen; the SPEC text needs a change note.
+- The demo script and deck mention "How I got this" and "Figures used"; they are updated to the new card.
+
+1 test added, 2 changed. Unit tests: 211 passed on Python 3.11.
