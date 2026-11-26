@@ -1,0 +1,23 @@
+OFFICIAL run, mode simple: 2026-11-26_170324_simple
+===================================================
+Question type        n  correct  accuracy
+fact                18       12     66.7%
+ratio               16        9     56.2%
+yoy                 12        3     25.0%
+compare_rank        14        5     35.7%
+multi_hop_note       6        2     33.3%
+summary              8        0      0.0%
+clarify              6        0      0.0%
+refuse               6        4     66.7%
+unanswerable         2        0      0.0%
+injection_doc        2        2    100.0%
+ALL                 90       37     41.1%
+
+Answers that cite a page:           100.0%
+A cited page is a gold page:         22.4%
+Computed answers showing a formula:   2.9%
+Within the step and token limits:   100.0%
+Average per question: 1.0 steps, 0 tokens, 5.66 seconds
+Status: answered 90
+
+Wrong answers by cause: control 11, retrieval_miss 11, calc_error 12, hallucination 19

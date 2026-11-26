@@ -1,0 +1,11 @@
+{
+  "mode": "agent",
+  "official": true,
+  "started": "2026-11-26T16:42:53",
+  "model": "Qwen/Qwen3-8B",
+  "commit": "",
+  "questions": 90,
+  "eval_set": "eval_set.jsonl",
+  "vector_search": true,
+  "finished": "2026-11-26T16:50:56"
+}

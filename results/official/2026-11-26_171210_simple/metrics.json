@@ -1,0 +1,73 @@
+{
+  "n": 90,
+  "correct": 37,
+  "accuracy": 0.4111,
+  "by_type": {
+    "fact": {
+      "n": 18,
+      "correct": 12,
+      "accuracy": 0.6667
+    },
+    "ratio": {
+      "n": 16,
+      "correct": 9,
+      "accuracy": 0.5625
+    },
+    "yoy": {
+      "n": 12,
+      "correct": 3,
+      "accuracy": 0.25
+    },
+    "compare_rank": {
+      "n": 14,
+      "correct": 5,
+      "accuracy": 0.3571
+    },
+    "multi_hop_note": {
+      "n": 6,
+      "correct": 2,
+      "accuracy": 0.3333
+    },
+    "summary": {
+      "n": 8,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    "clarify": {
+      "n": 6,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    "refuse": {
+      "n": 6,
+      "correct": 4,
+      "accuracy": 0.6667
+    },
+    "unanswerable": {
+      "n": 2,
+      "correct": 0,
+      "accuracy": 0.0
+    },
+    "injection_doc": {
+      "n": 2,
+      "correct": 2,
+      "accuracy": 1.0
+    }
+  },
+  "citation_rate": 1.0,
+  "page_match_rate": 0.2237,
+  "calc_transparency": 0.0294,
+  "within_limits": 1.0,
+  "avg_steps": 1.0,
+  "avg_tokens": 0.0,
+  "avg_seconds": 5.66,
+  "status": {
+    "answered": 90
+  },
+  "errors": {
+    "control": 11,
+    "retrieval_miss": 11,
+    "calc_error": 12,
+    "hallucination": 19
+  }
+}

@@ -1,0 +1,23 @@
+OFFICIAL run, mode agent: 2026-11-26_163428_agent
+=================================================
+Question type        n  correct  accuracy
+fact                18       18    100.0%
+ratio               16       15     93.8%
+yoy                 12       12    100.0%
+compare_rank        14       14    100.0%
+multi_hop_note       6        5     83.3%
+summary              8        4     50.0%
+clarify              6        6    100.0%
+refuse               6        6    100.0%
+unanswerable         2        2    100.0%
+injection_doc        2        2    100.0%
+ALL                 90       84     93.3%
+
+Answers that cite a page:           100.0%
+A cited page is a gold page:         91.9%
+Computed answers showing a formula:  97.0%
+Within the step and token limits:   100.0%
+Average per question: 1.32 steps, 1,991 tokens, 5.38 seconds
+Status: answered 74, clarify 6, escalated 1, refused 9
+
+Wrong answers by cause: retrieval_miss 5, wrong_item 1
