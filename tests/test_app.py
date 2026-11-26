@@ -59,7 +59,12 @@ def test_chat_screen_uses_the_agent(figure_store, monkeypatch):
     assert not at.exception
     shown = " ".join(m.value for m in at.markdown)
     assert "1,000.00 crore" in shown and "INFY-FY2526-p287" in shown          # answer + citation on screen
-    assert tables(at) and at.expander                                              # figures table + "How I got this"
+    # OLD: assert tables(at) and at.expander                                        # figures table + "How I got this"
+    # CHANGED (26 Nov 2026): the figures are in a closed box "Citation"; "How I got this" is no longer shown.
+    assert tables(at) and [e for e in at.expander if e.label == "Citation"]
+    assert not [e for e in at.expander if e.label.startswith("How I got this")]
+    assert tables(at)[0].value.splitlines()[0] == "| Figure | Company | Value | Citation |"
+    assert "| 1,000.00 crore |" in tables(at)[0].value and "FY2025-26 report, page 287" in tables(at)[0].value
 
     # OLD (until 24 Nov 2026): the sidebar filters were tested here. They are removed (mentor's review):
     # at.selectbox(key="filter_company").set_value("INFY").run()   # 19 Nov 2026: picked by key, the sidebar has more pickers now                                      # sidebar company filter
@@ -84,9 +89,12 @@ def test_chat_screen_uses_the_agent(figure_store, monkeypatch):
     at.chat_input[0].set_value("Should I buy TCS shares?").run()
     assert at.warning and "investment advice" in at.warning[0].value
     # touching a sidebar picker redraws the page; earlier answers must keep their full cards
-    traces = lambda: [e for e in at.expander if e.label.startswith("How I got this")]   # noqa: E731
+    # OLD: traces = lambda: [e for e in at.expander if e.label.startswith("How I got this")]   # noqa: E731
+    #      ... assert n_tables == 1 and expanders == 3                               # one answer with figures, three traces
+    # CHANGED (26 Nov 2026): the box counted is "Citation", one per answer that has figures.
+    traces = lambda: [e for e in at.expander if e.label == "Citation"]   # noqa: E731
     n_tables, expanders = len(tables(at)), len(traces())
-    assert n_tables == 1 and expanders == 3                                        # one answer with figures, three traces
+    assert n_tables == 1 and expanders == 1                                        # one answer with figures, one "Citation" box
     # OLD: at.selectbox(key="lk_sector").set_value("Banks").run()      (Quick lookup is removed, later on 24 Nov 2026)
     assert not at.radio and not at.selectbox and not at.multiselect                # no answer mode, no pickers
     at.run()                                                                       # the page is drawn again
@@ -361,6 +369,21 @@ def test_read_from_is_the_link_to_the_page_one_link_per_row():
     assert "[FY2025-26 report, page 355](https://example.org/r.pdf#page=355)" in lines[3]      # the other page, its own link
     assert "| FY2025-26 report, page 12 |" in lines[4]                                         # no address: plain text
     assert figures_table(AgentAnswer(status="clarify", clarifying_question="Which company?"), link) == ""
+
+
+def test_the_citation_table_has_four_columns_and_the_unit_beside_the_value():
+    """26 Nov 2026: Figure | Company | Value | Citation; no Year, Unit or citation-code column."""
+    from components import citation_table
+    a = AgentAnswer(status="answered", answer="x", verified=True, inputs=[
+        Figure(name="net_profit", company="HCLTECH", fiscal_year="2025-26", value=16652.0, unit="crore", page=375, citation="HCLTECH-FY2526-p375"),
+        Figure(name="net_profit", company="SBIN", fiscal_year="2025-26", value=3.0, unit="crore", page=12, citation="SBIN-FY2526-p12")])
+    link = lambda c: None if c.startswith("SBIN") else f"https://example.org/r.pdf#page={c.rsplit('-p', 1)[1]}"   # noqa: E731
+    lines = citation_table(a, link).splitlines()
+    assert lines[0] == "| Figure | Company | Value | Citation |" and len(lines) == 4
+    assert lines[2] == "| net_profit | HCLTECH | 16,652.00 crore | [FY2025-26 report, page 375](https://example.org/r.pdf#page=375) |"
+    assert lines[3] == "| net_profit | SBIN | 3.00 crore | FY2025-26 report, page 12 |"            # no address: plain text
+    assert "HCLTECH-FY2526-p375" not in lines[2] and "Unit" not in lines[0] and "Year" not in lines[0]
+    assert citation_table(AgentAnswer(status="clarify", clarifying_question="Which company?"), link) == ""
 
 
 def test_each_key_point_and_each_source_is_its_own_link():
