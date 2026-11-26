@@ -43,6 +43,8 @@ services:
       # inside the container land in ./results on the laptop, so they are not lost when the container is removed.
       - app-state:/app/state
       - ./results:/app/results
+      - ./src:/app/src
+      - ./app:/app/app
 
   qdrant:
     image: qdrant/qdrant:latest

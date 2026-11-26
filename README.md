@@ -37,7 +37,36 @@ single reference this project is built from.
    docker compose --env-file .env down
    ```
 
-> Langfuse tracing UI is at [http://localhost:3000](http://localhost:3000). Qdrant dashboard at [http://localhost:6333/dashboard](http://localhost:6333/dashboard).
+> Qdrant dashboard at [http://localhost:6333/dashboard](http://localhost:6333/dashboard).
+
+---
+
+## Langfuse setup (optional tracing)
+
+Langfuse provides LLM observability — trace every agent step, LLM call, and retrieval.
+
+1. **Start Langfuse** (runs alongside app + Qdrant):
+   ```bash
+   docker compose --env-file .env up --build --wait   # starts all services including langfuse
+   ```
+   Or start only Langfuse:
+   ```bash
+   docker compose up -d langfuse langfuse-db
+   ```
+2. **Create API keys** — open [http://localhost:3000](http://localhost:3000), sign up (local account), create a project, and copy the **Public Key** and **Secret Key** from *Settings → API Keys*.
+3. **Configure `.env`:**
+   ```dotenv
+   LANGFUSE_HOST=http://localhost:3000
+   LANGFUSE_PUBLIC_KEY=pk-lf-...      # from step 2
+   LANGFUSE_SECRET_KEY=sk-lf-...      # from step 2
+   ```
+4. **Restart the app** so it picks up the new keys:
+   ```bash
+   docker compose --env-file .env restart app
+   ```
+5. **Verify** — ask a question in the chat UI, then check [http://localhost:3000](http://localhost:3000) → *Traces*. You should see the agent trace with spans for retrieval, LLM calls, and tool use.
+
+> Tracing is **disabled** when `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are empty (the default). The app falls back to local `traces.jsonl` logging.
 
 ---
 
