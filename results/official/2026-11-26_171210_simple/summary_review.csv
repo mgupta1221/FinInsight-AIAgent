@@ -1,0 +1,140 @@
+﻿id,point_no,gold_point,gold_page,word_count_says,human_covered,agent_summary,question
+summary-001,1,"Geopolitical developments (regional conflicts, energy dynamics, tariff-led trade measures) have raised volatility in commodity and energy markets, disrupted global supply chains and pushed up logistics and freight costs; ITC is widening its sourcing and vendor base and diversifying fuel and energy sources.",110,N,,"The top risks listed by ITC in its FY2025-26 report include:
+
+1. **Foreign Currency Risk**: The Group undertakes transactions denominated in foreign currency (mainly US Dollar, Pound Sterling, Euro and Japanese Yen) which are subject to the risk of exchange rate fluctuations. Financial assets and liabilities denominated in foreign currency, including the Group’s net investments in foreign operations (with a functional currency other than Indian Rupee), are also subject to reinstatement risks [ITC-FY2526-p331].
+
+2. **Environmental and Sustainability Risks**: ITC is involved in mitigating environmental impacts across its value chain. It conducts third-party assessments of its Critical Tier-1 suppliers on an ongoing basis, covering key aspects on environmental compliance and management practices. Additionally, ITC facilitates its value chain partners in handling any adverse impacts [ITC-FY2526-p390].
+
+3. **Safety and Health Risks**: ITC has implemented comprehensive health and safety protocols to ensure a safe and healthy workplace. The company aims to maintain EHS standards ahead of applicable legislations and benchmarks against international best practices. It also conducts pre-commissioning and periodic operational audits to strengthen safety processes [ITC-FY2526-p373].",Summarise the top risks ITC lists in its FY2025-26 report.
+summary-001,2,"Cyber security risk is growing as digital transformation accelerates; it is managed through a Cyber Security Committee, a layered IT-OT security framework and a 24x7 AI-enabled Security Operations Centre. No reportable cyber incidents occurred in the year.",111,N,,,
+summary-001,3,"Climate change: with a pan-India footprint and reliance on agricultural and forestry-based raw materials, ITC is exposed to physical and transition climate risks; it targets Net Zero operations by 2050.",111,N,,,
+summary-001,4,"Evolving environmental regulation, in particular Extended Producer Responsibility (EPR) rules for plastic packaging; ITC has compliance systems with SOPs and reviews and is pursuing sustainable packaging.",112,N,,,
+summary-001,5,"Commodity price volatility in inputs and in agri-commodity trading; managed through inventory norms, long-term supplier contracts, supplier diversification, trading position limits and hedging on commodity exchanges.",112,N,,,
+summary-002,1,"Geopolitical, macroeconomic or health events: revenue is concentrated in a few geographies, client industries and clients, so such events can cause currency volatility and lower technology spending, hurting growth and profitability.",132,N,,"Infosys discloses several key risks in its FY2025-26 report, as outlined in the following excerpts:
+
+1. **Contractual Liabilities**: There is a risk of clients demanding more favorable terms, including onerous clauses related to liability, which may lead to litigations, fines, and adverse impacts on reputation, revenue, and profitability. Mitigation strategies include engaging clients on contractual terms through a dedicated in-house team, using a contract legal playbook, multi-layered governance processes, and comprehensive Board-level monitoring [INFY-FY2526-p135].
+
+2. **Complex and Evolving Regulatory Environment**: Non-compliance with the complex regulatory landscape, such as immigration, wages, tax, and sanctions, could result in investigations, regulatory inquiries, litigation, fines, and negative client sentiments. Mitigation includes a dedicated in-house compliance team, a comprehensive compliance framework, regular engagement with regulatory authorities, and periodic compliance certification [INFY-FY2526-p135].
+
+3. **Cybersecurity Risk Management**: Cyber threats are a key risk, with the potential for cyber attacks that could breach the company's information network or lead to the failure to protect sensitive information, resulting in operational disruptions, client dissatisfaction, or regulatory penalties. Mitigation strategies include a robust cybersecurity strategy, multi-layered governance, investment in technologies, collaboration with cyber experts, and regular cybersecurity awareness programs [INFY-FY2526-p134].
+
+4. **Data Protection and Privacy**: Failure to protect personal and sensitive information in accordance with applicable laws may lead to regulatory penalties. Mitigation involves a robust data privacy framework, policies, and controls [INFY-FY2526-p134].
+
+5. **Geopolitical and Economic Uncertainties**: The report notes that geopolitical shifts, economic uncertainties, supply chain disruptions, evolving regulations, advances in artificial intelligence, and cybersecurity risks have impacted operations and decision-making. The company's Enterprise Risk Management (ERM) processes have been instrumental in addressing these challenges [INFY-FY2526-p130].
+
+These risks are managed through a combination of proactive identification, strategic frameworks, and continuous monitoring and mitigation efforts.",Summarise the key risks Infosys discloses in its FY2025-26 report.
+summary-002,2,"Artificial intelligence risk: if Infosys cannot transform existing services with AI or scale new AI-first offerings, win rates, market share, revenue and profit could fall.",133,N,,,
+summary-002,3,Global Capability Centres (GCCs): clients insourcing work or expanding their own centres may shrink the addressable market and affect growth and profitability.,133,N,,,
+summary-002,4,"Cybersecurity: attacks that breach the network, or failure to protect confidential stakeholder information, may disrupt operations, reduce client satisfaction and lead to significant regulatory penalties.",134,Y,,,
+summary-002,5,"Complex and evolving regulatory environment (immigration, wages, tax, sanctions): non-compliance could lead to investigations, litigation, fines and negative client sentiment.",135,Y,,,
+summary-003,1,"Credit risk: the risk of borrowers defaulting on their contractual obligations, in particular failing to make scheduled payments or repayments.",103,N,,"HDFC Bank outlines several principal risks in its FY2025-26 report, including:
+
+1. **Credit Risk**: This involves the risk of loss due to a borrower's failure to meet their obligations. The Bank manages this through diversifying loan portfolios and implementing robust internal controls [HDFCBANK-FY2526-p101].
+
+2. **Market Risk**: This refers to the risk of losses due to adverse movements in market prices or interest rates. The Bank manages this by diversifying loan portfolios and managing interest rate exposure [HDFCBANK-FY2526-p101].
+
+3. **Liquidity Risk**: This is the risk that the Bank may not have enough liquid assets to meet its short-term obligations. The Bank manages this through continuous monitoring and maintaining adequate liquidity buffers [HDFCBANK-FY2526-p101].
+
+4. **Operational Risk**: This involves the risk of loss resulting from inadequate or failed internal processes, people, and systems or from external events. The Bank manages this through robust internal controls and continuous monitoring [HDFCBANK-FY2526-p101].
+
+5. **Model Risk**: This is the risk arising from the use of models in decision-making processes. The Bank manages this through rigorous validation and review of models [HDFCBANK-FY2526-p101].
+
+6. **Cybersecurity and Technology Risk**: This involves the risk of loss due to cyber threats and technological failures. The Bank manages this through a centralised AI Risk Policy and other robust cybersecurity measures [HDFCBANK-FY2526-p112].
+
+7. **Geopolitical and Macroeconomic Risks**: These include risks arising from global instability, trade disruptions, rising protectionism, and an uncertain policy environment. The Bank mitigates these risks through proactive risk identification, continuous scenario analysis, and stress testing [HDFCBANK-FY2526-p111].
+
+8. **AI-Related Risks**: These include risks associated with the use of artificial intelligence, such as bias in outcomes, inaccurate results, data privacy concerns, and over-reliance on automated processes. The Bank mitigates these risks through a centralised AI Risk Policy and governance frameworks [HDFCBANK-FY2526-p112].",Summarise the principal risks HDFC Bank lists in its FY2025-26 report.
+summary-003,2,Market risk: possible loss from adverse changes in market variables that affect the value of financial instruments held; controlled through Board-approved policies and market-risk limits.,104,N,,,
+summary-003,3,"Compliance risk: legal or regulatory sanctions from non-compliance with laws, regulatory requirements and standards; managed through a Board-approved compliance policy and compliance testing.",104,N,,,
+summary-003,4,Liquidity risk: the Bank may be unable to meet financial obligations as they fall due; managed under the Asset-Liability Management Policy with liquidity buffers (LCR / NSFR).,106,Y,,,
+summary-003,5,"Climate risk: physical risks (floods, cyclones, droughts) and transition risks from the move to a low-carbon economy; the Bank targets carbon-neutral operations by FY 2032.",105,N,,,
+summary-004,1,"HUL's stated strategic priorities: creating desire at scale through modern, youthful brands; strengthening future-ready marketing and channel moats; and accelerating market development across high-growth demand spaces.",43,N,,"Hindustan Unilever highlights several key strategic priorities in its FY2025-26 MD&A, which are aligned with its value creation model and long-term growth objectives. These priorities are structured around its six capitals and focus on driving sustainable and inclusive growth. The strategic priorities include:
+
+1. **Consumer-Centric Innovation**: Hindustan Unilever emphasizes the importance of pioneering research and deep consumer insights to drive breakthrough innovations that meet evolving consumer needs. This is supported by its intellectual capital, which is central to its value creation model [HINDUNILVR-FY2526-p7].
+
+2. **Enhancing Brand Relevance and Appeal**: The company aims to enhance the relevance and appeal of its brands, focusing resources on fewer, high-impact initiatives to create long-term value. This is part of its broader strategy to strengthen market leadership and drive growth [HINDUNILVR-FY2526-p42].
+
+3. **Strategic Portfolio Management**: Hindustan Unilever continues to focus on disciplined portfolio management, making clear choices in its business strategy to ensure capital is allocated prudently and effectively. This includes a focus on volume-led revenue growth and strengthening market leadership [HINDUNILVR-FY2526-p10].
+
+4. **Sustainability and Social Responsibility**: The company is committed to embedding sustainability in its operations, with a focus on regenerative practices, water stewardship, and plastic circularity initiatives. It also emphasizes the importance of social and relationship capital in building lasting trust with stakeholders [HINDUNILVR-FY2526-p7].
+
+5. **Operational Excellence and Digital Transformation**: Hindustan Unilever is investing in advanced automation, digital technologies, and sustainable, future-ready manufacturing to enhance productivity and agility. This includes a planned investment of up to ₹2,000 crores over two years to expand capacity in fast-growing premium categories [HINDUNILVR-FY2526-p42].
+
+6. **Stakeholder Engagement and Governance**: The company maintains a strong focus on transparency, accountability, and stakeholder engagement. It ensures open dialogue with shareholders and maintains robust governance structures to support long-term value creation [HINDUNILVR-FY2526-p42].
+
+These strategic priorities are supported by the company's strong financial foundation, disciplined capital allocation, and commitment to delivering consistent shareholder returns.",Summarise the strategic priorities Hindustan Unilever highlights in its FY2025-26 MD&A.
+summary-004,2,"A deliberate pivot to social-first, content-led demand generation, with higher investment in creators, communities and digital storytelling.",44,N,,,
+summary-004,3,"Building a more agile, data-driven and channel-specialised route-to-market for a fragmented retail landscape, including strengthening general trade.",44,N,,,
+summary-004,4,"Reshaping the portfolio towards health, wellbeing and science-backed brands (for example OZiva, Liquid I.V., Simple and Minimalist).",44,N,,,
+summary-004,5,"Outlook: stay anchored to the strategic priorities and execute with discipline to sustain consistent, volume-led growth, using scale, operational agility and a strong financial position.",54,Y,,,
+summary-005,1,"IT Services segment revenue grew 3.71% in FY2025-26, helped by rupee depreciation, acquisitions and the ramp-up of large deal wins; growth was held back by lower discretionary client spending.",25,N,,"Wipro's segment commentary in its FY2025-26 report outlines the structure and performance of its operating segments. The company is organized into two operating segments: IT Services and IT Products. The IT Services segment provides a range of AI-powered IT and IT-enabled services, including AI advisory, industry & functional consulting, AI native development, customer centric design, modernization, custom application development, infrastructure services, cybersecurity services, data and analytics services, business process services, research and development, and hardware and software design. The IT Products segment involves the company acting as a value-added reseller of security, packaged, and SaaS software for leading international brands. In certain total outsourcing contracts of the IT Services segment, the company delivers hardware, software products, and other related deliverables, which are reported as revenue from the sale of IT Products [WIPRO-FY2526-p484].
+
+Goodwill of INR 6,098 million and INR 6,082 million as at March 31, 2026 and 2025, respectively, has been allocated to the IT Services operating segment. Goodwill recognized on business combinations is allocated to Cash Generating Units (CGUs) within the IT Services operating segment, which are expected to benefit from the synergies of the acquisitions. The goodwill is tested for impairment annually based on the recoverable amount determined using the market capitalization approach [WIPRO-FY2526-p206].
+
+The company's segment reporting also includes information on revenues from different geographical regions. Revenues from the United States of America and the United Kingdom contributed more than 10% of the company's total revenues during the fiscal years ended March 31, 2026 and 2025. The company does not disclose detailed geographical location-wise assets due to the onerous nature of meaningful segregation of available information [WIPRO-FY2526-p362].",Summarise Wipro's segment commentary in its FY2025-26 report.
+summary-005,2,"Within IT Services, revenue from Americas 1, Europe and APMEA grew, while revenue from Americas 2 declined.",25,Y,,,
+summary-005,3,"IT Services gross profit as a percentage of revenue fell by 92 bps, mainly because of higher employee compensation and sub-contracting costs.",26,N,,,
+summary-005,4,"IT Services segment results rose 4.62% in absolute terms; as a percentage of segment revenue they improved by 15 bps, from 17.07% to 17.22%.",26,N,,,
+summary-005,5,"IT Products segment revenue rose 157.80%, driven by acquisitions and a few customers in India; segment results turned to a profit of Rs 559 million from a loss of Rs 173 million.",27,N,,,
+summary-006,1,"Volatile global political and economic environment: wars, adverse trade policies and high inflation can reduce client spending and create demand uncertainty for TCS' services.",91,Y,,"The top risks listed by TCS in its FY2024-25 report include:
+
+1. **Volatile global, political and economic environment**: This risk is associated with geo-political events, macroeconomic changes, and their impact on client spending and liquidity. It may also lead to increased costs and impact revenue growth due to risks to service delivery, business continuity, cybersecurity, sanctions compliance, and human rights in geo-politically sensitive zones [TCS-FY2425-p91].
+
+2. **Ability to attract and retain top talent, especially in emerging technology areas**: The risk is linked to the shortage of emerging technical skills and the potential for attrition in niche skill areas. TCS mitigates this by investing heavily in talent development and re-skilling programs, as well as expanding business delivery centers to tier-2/tier-3 cities in India [TCS-FY2425-p91].
+
+3. **Intellectual Property (IP) infringement and litigation risks**: The risk involves potential liabilities, increased litigation, and reputation impact due to infringement of IP by TCS associates or inadequate protection of TCS’ IP. TCS mitigates this through an industry-leading IP Management Framework, employee confidentiality agreements, and a strong legal team [TCS-FY2425-p93].
+
+4. **Cybersecurity and data privacy risks**: While not explicitly detailed, the report mentions that litigation risks may arise from personal data/information breach incidents, which implies cybersecurity and data privacy are significant concerns [TCS-FY2425-p93].
+
+5. **Operational and workplace safety risks**: These include fire safety, office safety risks such as slips/trips/falls, electrical safety, and road safety during commutes. Additionally, occupational health risks are associated with workplace ergonomics, indoor air quality, and workplace illumination [TCS-FY2425-p143].",Summarise the top risks TCS lists in its FY2024-25 report.
+summary-006,2,"Talent: growth depends on attracting and retaining talent, and emerging technology skills are in short supply, which can raise attrition.",91,Y,,,
+summary-006,3,Restrictions on global mobility: the global delivery model depends on moving skilled professionals across countries; regulatory restrictions in key markets can raise costs and delay projects.,91,N,,,
+summary-006,4,"Data protection and privacy compliance: laws such as GDPR and DPDPA carry severe consequences for violations and data breaches, and privacy risk has grown with wider AI adoption.",92,N,,,
+summary-006,5,"Cyber attacks: rising and fast-evolving; a security breach could bring reputational damage, penalties and legal and financial liabilities, and affect operations.",92,N,,,
+summary-007,1,"SBI names its major risks as credit, market, liquidity and operational risk (including IT and third-party risk), overseen by an independent risk governance structure and the Risk Management Committee of the Board.",115,N,,"The key risk disclosures of State Bank of India (SBI) in its FY2025-26 report include the following:
+
+1. **Market Risk**:  
+   - Market Risk Stress Testing is conducted quarterly as a complement to Value at Risk (VaR) and reported to Top Management, the Market Risk Management Committee, and the Risk Management Committee of the Board.  
+   - Foreign offices monitor market risk in accordance with local regulatory and RBI stipulations.  
+   - Stop Loss limits for individual investments and exposure limits for certain portfolios are prescribed.  
+   - Capital Charge for Market Risk under the Standardised method is as follows (in Crores):  
+     - Interest Rate Risk: 11,680.18  
+     - Equity Risk: 27,512.16  
+     - Foreign Exchange Risk (including Gold): 1,642.56  
+     - Total: 40,834.90  
+
+2. **Credit Risk**:  
+   - On-balance sheet netting is applied to loans/advances and deposits with legally enforceable netting arrangements.  
+   - The Bank has an integrated Credit Risk Management, Credit Risk Mitigation, and Collateral Management Policy, reviewed annually.  
+   - The Comprehensive Approach is used for collateral valuation, allowing full offset of collateral (after appropriate haircuts) against exposures.  
+   - Quantitative disclosures for credit risk include:  
+     - Total exposure covered by eligible financial collateral after haircuts: 5,95,591.82 (in Crores)  
+     - Total exposure covered by guarantees/credit derivatives: 1,88,986.75 (in Crores)  
+
+3. **Credit Risk Mitigation**:  
+   - The Bank uses credit risk mitigants such as guarantees, sovereigns, and well-rated corporates, as well as fixed and current assets of the counterparty.  
+   - Credit rating agencies used include domestic agencies like CARE, CRISIL, ICRA, and international agencies like Moody’s, S&P, and FITCH.  
+   - Ratings are applied based on the maturity of exposures, with short-term ratings for exposures with a maturity of less than or equal to one year and long-term ratings for longer-term exposures.  
+
+4. **Sustainability and Risk Management**:  
+   - The Bank emphasizes operational resilience, environmental stewardship, human capital development, governance, and robust risk management.  
+   - The Sustainability Report for FY2025-26 outlines the Bank’s commitment to creating long-term value for stakeholders while advancing inclusive and sustainable economic growth.  
+
+These disclosures are detailed in the notes section of the report, specifically on pages 389, 390, 391, 394, and the overview section on page 431 [SBIN-FY2526-p389, SBIN-FY2526-p390, SBIN-FY2526-p391, SBIN-FY2526-p394, SBIN-FY2526-p431].",Summarise the key risk disclosures of State Bank of India in its FY2025-26 report.
+summary-007,2,Credit risk: appraisal and monitoring frameworks are in place; a dedicated team studies the outlook for 37 industries and sectors that make up close to 62% of total advances (excluding retail and agriculture).,115,N,,,
+summary-007,3,"Market risk: controlled with trading limits and triggers; Value at Risk is calculated and back-tested daily, and stressed VaR and a Board-approved stress-testing framework are used.",116,N,,,
+summary-007,4,"Operational risk: loss from inadequate or failed internal processes, people and systems, or from external events; managed through risk and control self-assessment, key risk indicators, a business continuity plan and a third-party risk framework.",118,N,,,
+summary-007,5,"IT and information security risk: an IT Risk Management Policy is in place, and the Bank runs threat-intelligence-driven Red Team exercises to test its cyber defences.",119,N,,,
+summary-008,1,Economic fluctuations: macroeconomic volatility may weaken consumer sentiment and discretionary spending and shift demand towards value offerings; inflation and commodity prices are managed through a structured procurement and cost framework.,41,N,,"Nestle India discloses several main business risks in its FY2025-26 report, primarily related to financial risks, sustainability, and operational compliance. The key risks include:
+
+1. **Financial Risks**: The Company is exposed to liquidity risk, credit risk, and market risk. Liquidity risk involves potential difficulties in meeting obligations associated with financial liabilities. The Company manages this risk by maintaining sufficient liquidity through rolling forecasts, planned investments, and committed credit lines with banks [NESTLEIND-FY2526-p185].
+
+2. **Sustainability and Business Responsibility**: The Company is required to disclose sustainability information as per SEBI regulations, and it has a framework for managing sustainability-related risks. The report includes an Independent Practitioner’s Reasonable Assurance Report on the Identified Sustainability Information, which covers the BRSR Core attributes [NESTLEIND-FY2526-p263].
+
+3. **Cybersecurity and Data Privacy**: The Company has a resilient CyberSecurity Risk Framework and an ISO 27001:2022 certified Information Security Management System to mitigate digital threats. It also integrates ""Privacy-by-Design"" into its operational lifecycle, including Privacy Impact Assessments and Vendor Privacy Risk Assessments [NESTLEIND-FY2526-p258].
+
+4. **Consumer Complaints and Grievance Redressal**: The Company has a structured process for handling consumer complaints and grievances, including an anonymous 'Speak Up' platform for reporting concerns related to human rights, ethics, or misconduct. The Company also conducts awareness and training sessions on human rights issues and ethical conduct [NESTLEIND-FY2526-p245].",Summarise the main business risks Nestle India discloses in its FY2025-26 report.
+summary-008,2,"Supply chain disruptions from economic slowdowns, inflation, currency volatility, geopolitical developments and natural disasters can affect raw material availability, labour capacity and logistics costs.",41,N,,,
+summary-008,3,"Evolving consumer preferences, driven by demographic shifts, global food trends and digital and social media, with rising demand for quality and convenience.",41,N,,,
+summary-008,4,"Environmental risk: climate-related risks such as variable monsoons, yield uncertainty and volatile raw material prices may affect agricultural incomes, consumer demand and trade.",42,N,,,
+summary-008,5,"Cybersecurity and AI: growing reliance on digital platforms and third parties exposes the company to unauthorised access, ransomware and data leakage; AI adds data privacy, model bias and deepfake risks.",42,N,,,
