@@ -89,7 +89,7 @@ Copy `vm04-ca.crt` into the project folder (next to `pyproject.toml`).
 
 ## 5\. Put the PDFs in place
 
-Copy the 30 PDFs into `data\manual-collection\`. Names must follow this pattern:
+Since 27 Nov 2026 the 30 PDFs are in the repository, in `data\manual-collection\`; a fresh clone already has them. For a new report, copy it there. Names must follow this pattern:
 
 ```
 Infosys-Annual-Report-2025-26.pdf

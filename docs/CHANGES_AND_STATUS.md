@@ -1733,3 +1733,56 @@ Asked for after trying the screen (`app/components.py`; the agent is not touched
 - The demo script and deck mention "How I got this" and "Figures used"; they are updated to the new card.
 
 1 test added, 2 changed. Unit tests: 211 passed on Python 3.11.
+
+## 71. Results 26 Nov 2026 — code frozen, official evaluation runs
+
+The code and the gold answers were frozen on 26 Nov 2026 (commit `4c786bc` on branch `Nagalaxmi-codebase`).
+Three official runs of the agent and three of the baseline were made on that code. The run folders are in
+`results/official/` (commit `c3069dc`).
+
+| Mode | Run 1 | Run 2 | Run 3 | Average |
+|---|---|---|---|---|
+| Agent | 84 of 90 | 84 of 90 | 84 of 90 | 93.3% |
+| Search + model (baseline) | 37 of 90 | 37 of 90 | 37 of 90 | 41.1% |
+
+| Question type | n | Baseline | Agent |
+|---|---|---|---|
+| Fact | 18 | 66.7% | 100% |
+| Ratio | 16 | 56.2% | 93.8% |
+| Year-on-year | 12 | 25.0% | 100% |
+| Comparison and ranking | 14 | 35.7% | 100% |
+| Multi-step, from the notes | 6 | 33.3% | 83.3% |
+| Summary (word count; not yet reviewed by a person) | 8 | 0% | 50.0% |
+| Clarify | 6 | 0% | 100% |
+| Refuse | 6 | 66.7% | 100% |
+| Not in the corpus | 2 | 0% | 100% |
+| Planted instruction | 2 | 100% | 100% |
+| All | 90 | 41.1% | 93.3% |
+
+- The three runs of each mode gave the same score for every question type (lowest = highest).
+- The agent misses the same six questions in every run: ratio-012, multihop-006, summary-003, summary-004,
+  summary-005 and summary-008. None is an invented figure.
+- Agent, per question: 1.32 steps, 1,991 tokens, about 5.5 seconds. Every answer cites a page; a cited page is a
+  gold page for 91.9%; 97.0% of computed answers show the formula; all within the step and token limits.
+- Baseline, per question: about 5.6 seconds; a cited page is a gold page for 22.4%.
+- The official results equal the practice runs of 21 to 24 Nov 2026.
+- The field "commit" in each `run_info.json` is empty, because the runs were made in the working folder, which
+  is not a Git clone. The code is the frozen commit named above; the two folders held the same files.
+- Not done: the review of the summaries by a person (`summary_review.csv`, then `--rescore`). The summary score
+  is therefore the strict word-count score.
+
+After the freeze only documents changed (this section).
+
+## 72. Update 27 Nov 2026 — the 30 annual reports are included in the repository
+
+Team decision for the submission: the report PDFs in `data/manual-collection/` are committed, so that an
+evaluator has the exact files that were ingested and does not have to download them.
+
+- `.gitignore`: the line `data/manual-collection/*.pdf` is commented out, with the reason.
+- `AGENTS.md`: the report PDFs are taken off the list of files that are never committed.
+- `README.md`, `docs/INSTALL_WINDOWS.md`, `docs/INSTALL_MAC.md`: they now say that a clone already has the PDFs.
+- Size: 30 files, about 570 MB in all; the largest is 45 MB (GitHub accepts files up to 100 MB and warns above 50 MB).
+- `data/report_sources.csv` is unchanged: it still gives the address, download date and checksum of each file,
+  and `python scripts/hash_reports.py` still checks them.
+- Still not committed: `.env`, the certificate, `store/`, `data/parsed/` and the practice runs.
+- No code changed; the frozen code and the official results are as in section 71.

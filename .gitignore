@@ -12,7 +12,10 @@ venv/
 .ruff_cache/
 
 # Data & build outputs (large / regenerated)
-data/manual-collection/*.pdf
+# OLD (until 27 Nov 2026): data/manual-collection/*.pdf
+# CHANGED 27 Nov 2026 (team decision for the submission): the 30 annual reports are now part of the repository,
+# so that an evaluator has the exact files that were ingested. Each is under 50 MB; together about 570 MB.
+# Their addresses and checksums stay in data/report_sources.csv.
 data/parsed/
 store/qdrant/
 store/*.sqlite
