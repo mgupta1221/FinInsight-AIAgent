@@ -88,7 +88,7 @@ cloning you must obtain them from your coordinator / team drive:
 2. **CA certificate `vm04-ca.crt`** — the HTTPS certificate for the endpoint. **Save it in the project
    root** (the `Project\` folder, next to `README.md`). If the file has a different name or location,
    point `OPENAI_CA_CERT` in `.env` at it.
-3. **The 30 annual-report PDFs** — put them in `data\manual-collection\` (step 4).
+3. **The 30 annual-report PDFs** — since 27 Nov 2026 they are in the repository, in `data\manual-collection\`, so a clone already has them (step 4).
 
 > Your base URL and certificate are **group-specific**. The defaults in `.env.example` are for group
 > 046–065 (`https://103.42.50.41:1034/v1`, `vm04-ca.crt`); if you are in another group, use your
